@@ -161,6 +161,10 @@ function MiniAvatar({ initials, className }: { initials: string; className?: str
   );
 }
 
+function BrandMark({ className }: { className?: string }) {
+  return <span role="img" aria-label="Logo 360 Center of Research" className={cn("block shrink-0 overflow-hidden rounded-lg bg-white shadow-sm", className)} style={{ backgroundImage: "url('/center-of-research-360.png')", backgroundPosition: "50% 43%", backgroundRepeat: "no-repeat", backgroundSize: "260%" }} />;
+}
+
 function Sidebar({ active, onChange, open, onClose, userName, projectCount, isAdmin, onProfile, onLogout }: { active: View; onChange: (v: View) => void; open: boolean; onClose: () => void; userName: string; projectCount: number; isAdmin: boolean; onProfile: () => void; onLogout: () => void }) {
   return (
     <>
@@ -168,10 +172,10 @@ function Sidebar({ active, onChange, open, onClose, userName, projectCount, isAd
       <aside className={cn("fixed inset-y-0 left-0 z-40 flex w-[252px] flex-col bg-[#193246] px-4 py-5 text-white transition-transform lg:translate-x-0", open ? "translate-x-0" : "-translate-x-full")}>
         <div className="flex items-center justify-between px-2">
           <button onClick={() => onChange("dashboard")} className="flex items-center gap-3 text-left">
-            <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#e76f36] text-lg font-black">R</span>
+            <BrandMark className="h-10 w-10" />
             <span>
-              <span className="block font-serif text-xl font-semibold leading-none">Ruang Riset</span>
-              <span className="mt-1 block text-[10px] uppercase tracking-[0.2em] text-[#9eb0bc]">Center of Research</span>
+              <span className="block max-w-[155px] font-serif text-base font-semibold leading-tight">360 - Center of Research</span>
+              <span className="mt-1 block text-[9px] uppercase tracking-[0.18em] text-[#9eb0bc]">Project Workspace</span>
             </span>
           </button>
           <button className="text-[#9eb0bc] lg:hidden" onClick={onClose}><X size={20} /></button>
@@ -543,7 +547,7 @@ function Dashboard({ projects, goTo, backendEnabled }: { projects: Project[]; go
   const dateLabel = new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }).format(today);
   return (
     <div className="fade-up">
-      <SectionHeading eyebrow={dateLabel} title="Selamat datang di Ruang Riset." description={attention.length > 0 ? `Ada ${attention.length} project yang perlu ditindaklanjuti.` : total > 0 ? "Semua project sedang berjalan tanpa tanda delay atau revisi." : "Belum ada project. Tambahkan project pertama untuk memulai."} action={<Button onClick={() => goTo("tracker")}><Plus size={17} /> Tambah project</Button>} />
+      <SectionHeading eyebrow={dateLabel} title="Selamat datang di 360 - Center of Research." description={attention.length > 0 ? `Ada ${attention.length} project yang perlu ditindaklanjuti.` : total > 0 ? "Semua project sedang berjalan tanpa tanda delay atau revisi." : "Belum ada project. Tambahkan project pertama untuk memulai."} action={<Button onClick={() => goTo("tracker")}><Plus size={17} /> Tambah project</Button>} />
 
       <div className="grid gap-px overflow-hidden border border-[#ddd9d0] bg-[#ddd9d0] sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <StatCard label="Total project" value={String(total)} change={total > 0 ? "Data aktual" : "Belum ada project"} icon={FolderOpen} accent="#3578a8" />
@@ -1356,13 +1360,13 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
     <main className="grid min-h-screen bg-[#f5f3ed] lg:grid-cols-[1.05fr_.95fr]">
       <section className="relative hidden overflow-hidden bg-[#193246] p-14 text-white lg:flex lg:flex-col">
         <div className="absolute inset-0 grid-paper opacity-[.035]" />
-        <div className="relative flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-lg bg-[#e76f36] text-xl font-black">R</span><div><div className="font-serif text-2xl font-semibold">Ruang Riset</div><div className="text-[10px] uppercase tracking-[.2em] text-[#9eb0bc]">Center of Research</div></div></div>
+        <div className="relative flex items-center gap-4"><BrandMark className="h-14 w-14" /><div><div className="font-serif text-2xl font-semibold">360 - Center of Research</div><div className="mt-1 text-[10px] uppercase tracking-[.2em] text-[#9eb0bc]">Project Workspace</div></div></div>
         <div className="relative my-auto max-w-xl"><div className="mb-5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.22em] text-[#e9a17d]"><span className="h-px w-8 bg-[#e9a17d]" />Track · Schedule · Complete · Archive</div><h1 className="font-serif text-5xl font-semibold leading-[1.08] tracking-[-.03em]">Satu ruang untuk setiap proses riset yang berarti.</h1><p className="mt-6 max-w-lg text-base leading-7 text-[#b6c3cb]">Jaga project, agenda, aset, dan keputusan tim tetap tersambung—dari brief pertama hingga laporan final.</p></div>
         <div className="relative flex items-center gap-3 text-xs text-[#8499a7]"><ShieldCheck size={16} className="text-[#e9a17d]" />Workspace privat dengan sesi terenkripsi</div>
       </section>
       <section className="flex items-center justify-center px-5 py-12">
         <div className="w-full max-w-md">
-          <div className="mb-10 flex items-center gap-3 lg:hidden"><span className="grid h-9 w-9 place-items-center rounded-lg bg-[#e76f36] font-black text-white">R</span><span className="font-serif text-xl font-semibold">Ruang Riset</span></div>
+          <div className="mb-10 flex items-center gap-3 lg:hidden"><BrandMark className="h-11 w-11" /><span className="font-serif text-lg font-semibold">360 - Center of Research</span></div>
           <div className="text-[10px] font-bold uppercase tracking-[.2em] text-[#e76f36]">Workspace tim</div>
           <h2 className="mt-3 font-serif text-4xl font-semibold tracking-[-.025em]">{headings[mode].title}</h2>
           <p className="mt-3 text-sm leading-6 text-[#6d767a]">{headings[mode].description}</p>
@@ -1463,7 +1467,7 @@ export default function Home() {
       <div className="lg:pl-[252px]">
         <Header active={active} onMenu={() => setMenuOpen(true)} userName={userName} onProfile={() => setActive("profile")} onNavigate={setActive} backendEnabled={!!session} />
         <main className="mx-auto max-w-[1600px] px-5 py-7 md:px-8 md:py-9">{page}</main>
-        <footer className="mx-5 flex items-center justify-between border-t border-[#ddd9d0] py-5 text-[10px] uppercase tracking-[.14em] text-[#989d9f] md:mx-8"><span>Ruang Riset © 2026</span><span className="flex items-center gap-1.5"><Sparkles size={11} /> Keep curiosity alive</span></footer>
+        <footer className="mx-5 flex items-center justify-between border-t border-[#ddd9d0] py-5 text-[10px] uppercase tracking-[.14em] text-[#989d9f] md:mx-8"><span>360 - Center of Research © 2026</span><span className="flex items-center gap-1.5"><Sparkles size={11} /> Keep curiosity alive</span></footer>
       </div>
     </div>
   );

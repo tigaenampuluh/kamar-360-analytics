@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ruang Riset — Project Workspace",
+  title: "360 - Center of Research — Project Workspace",
   description: "Workspace terpusat untuk melacak, menjadwalkan, dan mengarsipkan project riset.",
 };
 
