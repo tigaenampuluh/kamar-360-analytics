@@ -12,6 +12,9 @@
 .env*
 !.env.example
 /.codex
+/.agents
+/.vercel
+/skills-lock.json
 
 # debug
 npm-debug.log*

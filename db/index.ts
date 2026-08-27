@@ -1,3 +1,4 @@
+import { attachDatabasePool } from "@vercel/functions";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "./schema";
@@ -11,6 +12,8 @@ export const pool = globalForDatabase.postgresPool ?? new Pool({
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
 });
+
+if (process.env.VERCEL) attachDatabasePool(pool);
 
 if (process.env.NODE_ENV !== "production") globalForDatabase.postgresPool = pool;
 
