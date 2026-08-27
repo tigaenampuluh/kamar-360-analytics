@@ -1039,7 +1039,7 @@ function ProfilePage({ profile, onSave, onLogout }: { profile: ProfileData; onSa
   </div>;
 }
 
-function AuthScreen({ onEnterDemo }: { onEnterDemo: () => void }) {
+function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; demoEnabled: boolean }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -1087,9 +1087,9 @@ function AuthScreen({ onEnterDemo }: { onEnterDemo: () => void }) {
             {error && <div className="border-l-2 border-[#d8564e] bg-[#f9e8e5] px-3 py-2 text-xs text-[#a43d37]">{error}</div>}
             <Button type="submit" className="mt-2 w-full" disabled={loading}>{loading ? <LoaderCircle size={17} className="animate-spin" /> : <LogIn size={17} />}{loading ? "Memproses..." : mode === "login" ? "Masuk ke workspace" : "Daftar dan masuk"}</Button>
           </form>
-          <div className="my-5 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#9a9fa2]"><span className="h-px flex-1 bg-[#dedbd3]" />atau<span className="h-px flex-1 bg-[#dedbd3]" /></div>
+          {demoEnabled && <><div className="my-5 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#9a9fa2]"><span className="h-px flex-1 bg-[#dedbd3]" />atau<span className="h-px flex-1 bg-[#dedbd3]" /></div>
           <Button type="button" variant="outline" className="w-full" onClick={onEnterDemo}><LayoutDashboard size={17} /> Masuk mode demo</Button>
-          <p className="mt-2 text-center text-[11px] leading-5 text-[#8a9194]">Gunakan data mock untuk mengecek Dashboard dan Kanban tanpa backend.</p>
+          <p className="mt-2 text-center text-[11px] leading-5 text-[#8a9194]">Gunakan data mock untuk mengecek Dashboard dan Kanban tanpa backend.</p></>}
           <div className="mt-6 border-t border-[#dedbd3] pt-5 text-center text-xs text-[#717a7e]">{mode === "login" ? "Belum memiliki akun?" : "Sudah memiliki akun?"} <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }} className="font-bold text-[#e76f36] hover:underline">{mode === "login" ? "Daftar sekarang" : "Masuk di sini"}</button></div>
         </div>
       </section>
@@ -1138,7 +1138,7 @@ export default function Home() {
   }, [session]);
 
   if (isPending || !demoReady) return <div className="grid min-h-screen place-items-center bg-[#f5f3ed] text-[#e76f36]"><LoaderCircle className="animate-spin" size={28} /></div>;
-  if (!session && !demoMode) return <AuthScreen onEnterDemo={() => { window.sessionStorage.setItem("ruang-riset-demo", "true"); setDemoMode(true); }} />;
+  if (!session && !demoMode) return <AuthScreen demoEnabled={process.env.NEXT_PUBLIC_ENABLE_DEMO !== "false"} onEnterDemo={() => { window.sessionStorage.setItem("ruang-riset-demo", "true"); setDemoMode(true); }} />;
 
   const userName = profile.name;
   const logout = () => { if (!session) { window.sessionStorage.removeItem("ruang-riset-demo"); setDemoMode(false); setActive("dashboard"); return; } void authClient.signOut().then(() => window.location.reload()); };

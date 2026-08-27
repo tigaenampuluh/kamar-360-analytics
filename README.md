@@ -13,6 +13,13 @@ Full-stack research workspace built with Next.js App Router, Tailwind CSS, shadc
 
 The first user can register from the sign-up form. Email/password sessions are managed by Better Auth.
 
+## Production access controls
+
+- Set `ALLOWED_SIGNUP_EMAILS` to a comma-separated list of approved member emails. In production, sign-up is denied when the list is empty or the submitted email is not listed.
+- Set `NEXT_PUBLIC_ENABLE_DEMO=false` to remove the mock-data demo entry point from the production login screen.
+- Store `DATABASE_URL` and `BETTER_AUTH_SECRET` as sensitive environment variables, and set `BETTER_AUTH_URL` to the exact HTTPS production origin.
+- Apply database migrations before opening the production application. Seed data is intended for local/demo environments and should not be applied to a clean production workspace unless explicitly desired.
+
 ## API routes
 
 - `GET|POST /api/auth/[...all]` — Better Auth handler
