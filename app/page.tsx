@@ -122,6 +122,14 @@ const statusMeta: Record<Status, { dot: string; soft: string; text: string }> = 
   Done: { dot: "bg-[#4f826c]", soft: "bg-[#e5efe9]", text: "text-[#3f6f5b]" },
 };
 
+const statusColors: Record<Status, string> = {
+  "On Going": "#3578a8",
+  Delay: "#d8564e",
+  Pending: "#d29b32",
+  Revisi: "#825a9f",
+  Done: "#4f826c",
+};
+
 const priorityMeta: Record<Priority, string> = {
   High: "bg-[#f9e8e5] text-[#b9433d]",
   Medium: "bg-[#f7efdc] text-[#996c17]",
@@ -153,7 +161,7 @@ function MiniAvatar({ initials, className }: { initials: string; className?: str
   );
 }
 
-function Sidebar({ active, onChange, open, onClose, userName, isAdmin, onProfile, onLogout }: { active: View; onChange: (v: View) => void; open: boolean; onClose: () => void; userName: string; isAdmin: boolean; onProfile: () => void; onLogout: () => void }) {
+function Sidebar({ active, onChange, open, onClose, userName, projectCount, isAdmin, onProfile, onLogout }: { active: View; onChange: (v: View) => void; open: boolean; onClose: () => void; userName: string; projectCount: number; isAdmin: boolean; onProfile: () => void; onLogout: () => void }) {
   return (
     <>
       {open && <button className="fixed inset-0 z-30 bg-[#122838]/45 lg:hidden" onClick={onClose} aria-label="Tutup navigasi" />}
@@ -178,7 +186,7 @@ function Sidebar({ active, onChange, open, onClose, userName, isAdmin, onProfile
               <button key={item.id} onClick={() => { onChange(item.id); onClose(); }} className={cn("flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition", selected ? "bg-white/10 font-semibold text-white" : "text-[#b7c4cc] hover:bg-white/[.06] hover:text-white")}>
                 <Icon size={18} strokeWidth={selected ? 2.3 : 1.8} />
                 {item.label}
-                {item.id === "tracker" && <span className="ml-auto rounded-full bg-[#e76f36] px-2 py-0.5 text-[10px] font-bold text-white">8</span>}
+                {item.id === "tracker" && <span className="ml-auto rounded-full bg-[#e76f36] px-2 py-0.5 text-[10px] font-bold text-white">{projectCount}</span>}
               </button>
             );
           })}
@@ -434,6 +442,7 @@ function RecentActivityList({ items, onViewAll }: { items: RecentActivityItem[];
             </div>
           </div>
         ))}
+        {items.length === 0 && <div className="py-10 text-center text-xs text-[#8a9194]">Belum ada aktivitas workspace.</div>}
       </div>
     </section>
   );
@@ -446,13 +455,6 @@ type DeadlineReminderItem = {
   meta: string;
   type: "Deadline" | "Agenda";
 };
-
-const dashboardDeadlineReminders: DeadlineReminderItem[] = [
-  { day: "28", month: "Agu", title: "Riset Persepsi Publik Q3", meta: "17.00 • Nadia", type: "Deadline" },
-  { day: "29", month: "Agu", title: "Review laporan Gen Z", meta: "10.00 • Dita, Angga", type: "Agenda" },
-  { day: "01", month: "Sep", title: "Kickoff riset otomotif", meta: "09.30 • Semua tim", type: "Agenda" },
-  { day: "02", month: "Sep", title: "Social Listening — Isu Pangan", meta: "17.00 • Arga", type: "Deadline" },
-];
 
 function DeadlineReminder({ items, onOpenCalendar }: { items: DeadlineReminderItem[]; onOpenCalendar: () => void }) {
   return (
@@ -480,45 +482,92 @@ function DeadlineReminder({ items, onOpenCalendar }: { items: DeadlineReminderIt
             </div>
           </div>
         ))}
+        {items.length === 0 && <div className="border border-dashed border-white/15 px-4 py-8 text-center text-xs text-[#9eb0bc]">Belum ada deadline project dalam 7 hari ke depan.</div>}
       </div>
       <button onClick={onOpenCalendar} className="mt-5 flex items-center gap-2 text-xs font-bold text-[#e9a17d] hover:underline">Buka kalender <ArrowUpRight size={14} /></button>
     </section>
   );
 }
 
-function Dashboard({ projects, goTo }: { projects: Project[]; goTo: (v: View) => void }) {
-  const dashboardProjects = projects.length > 0 ? projects : initialProjects;
-  const attention = dashboardProjects.filter((p) => p.status === "Delay" || p.status === "Revisi");
+function Dashboard({ projects, goTo, backendEnabled }: { projects: Project[]; goTo: (v: View) => void; backendEnabled: boolean }) {
+  const [recentActivities, setRecentActivities] = useState<RecentActivityItem[]>(backendEnabled ? [] : dashboardRecentActivities);
+  useEffect(() => {
+    if (!backendEnabled) { setRecentActivities(dashboardRecentActivities); return; }
+    const controller = new AbortController();
+    fetch("/api/activity?limit=3", { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load activity")))
+      .then((payload: { data: Array<{ actorName: string; actorInitials: string; action: string; details: string; projectTitle: string | null; createdAt: string }> }) => {
+        const now = new Date();
+        setRecentActivities(payload.data.map((activity) => ({
+          initials: activity.actorInitials,
+          content: <><b>{activity.actorName}</b> {activity.action}{activity.projectTitle ? <> <b>{activity.projectTitle}</b></> : activity.details ? ` ${activity.details}` : ""}</>,
+          time: activityTimeLabel(new Date(activity.createdAt), now),
+        })));
+      })
+      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) setRecentActivities([]); });
+    return () => controller.abort();
+  }, [backendEnabled]);
+  const dashboardProjects = projects;
+  const total = dashboardProjects.length;
+  const counts = (Object.keys(statusMeta) as Status[]).reduce<Record<Status, number>>((result, status) => {
+    result[status] = dashboardProjects.filter((project) => project.status === status).length;
+    return result;
+  }, { "On Going": 0, Delay: 0, Pending: 0, Revisi: 0, Done: 0 });
+  const percentage = (count: number) => total > 0 ? Math.round((count / total) * 100) : 0;
+  const attention = dashboardProjects.filter((project) => project.status === "Delay" || project.status === "Revisi");
+  const overdue = dashboardProjects.filter((project) => project.status === "Delay" && project.deadlineIso && new Date(project.deadlineIso) < new Date()).length;
+  const chartStatuses: Status[] = ["On Going", "Pending", "Delay", "Revisi", "Done"];
+  let chartPosition = 0;
+  const chartSegments = chartStatuses.map((status) => {
+    const start = chartPosition;
+    chartPosition += total > 0 ? (counts[status] / total) * 100 : 0;
+    return `${statusColors[status]} ${start}% ${chartPosition}%`;
+  });
+  const chartBackground = total > 0 ? `conic-gradient(${chartSegments.join(", ")})` : "#ebe9e3";
+  const today = new Date();
+  const nextWeek = new Date(today); nextWeek.setDate(today.getDate() + 7);
+  const deadlineItems: DeadlineReminderItem[] = dashboardProjects
+    .filter((project) => project.status !== "Done" && project.deadlineIso && new Date(project.deadlineIso) >= today && new Date(project.deadlineIso) <= nextWeek)
+    .sort((a, b) => new Date(a.deadlineIso!).getTime() - new Date(b.deadlineIso!).getTime())
+    .slice(0, 4)
+    .map((project) => {
+      const deadline = new Date(project.deadlineIso!);
+      return {
+        day: String(deadline.getDate()).padStart(2, "0"),
+        month: new Intl.DateTimeFormat("id-ID", { month: "short" }).format(deadline).replace(".", ""),
+        title: project.title,
+        meta: `${new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit" }).format(deadline)} • ${project.pic}`,
+        type: "Deadline" as const,
+      };
+    });
+  const dateLabel = new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }).format(today);
   return (
     <div className="fade-up">
-      <SectionHeading eyebrow="Rabu, 26 Agustus 2026" title="Selamat siang, Angga." description="Berikut denyut terbaru tim riset. Ada tiga item yang perlu ditindaklanjuti hari ini." action={<Button onClick={() => goTo("tracker")}><Plus size={17} /> Tambah project</Button>} />
+      <SectionHeading eyebrow={dateLabel} title="Selamat datang di Ruang Riset." description={attention.length > 0 ? `Ada ${attention.length} project yang perlu ditindaklanjuti.` : total > 0 ? "Semua project sedang berjalan tanpa tanda delay atau revisi." : "Belum ada project. Tambahkan project pertama untuk memulai."} action={<Button onClick={() => goTo("tracker")}><Plus size={17} /> Tambah project</Button>} />
 
       <div className="grid gap-px overflow-hidden border border-[#ddd9d0] bg-[#ddd9d0] sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <StatCard label="Total project" value="24" change="+3 bulan ini" icon={FolderOpen} accent="#3578a8" />
-        <StatCard label="On Going" value="8" change="33% dari total" icon={Activity} accent="#3578a8" />
-        <StatCard label="Pending" value="4" change="Menunggu mulai" icon={Clock3} accent="#d29b32" />
-        <StatCard label="Delay" value="3" change="2 lewat deadline" icon={CircleAlert} accent="#d8564e" />
-        <StatCard label="Revisi" value="2" change="Perlu tindak lanjut" icon={FileText} accent="#825a9f" />
-        <StatCard label="Done" value="7" change="29% dari total" icon={Check} accent="#4f826c" />
+        <StatCard label="Total project" value={String(total)} change={total > 0 ? "Data aktual" : "Belum ada project"} icon={FolderOpen} accent="#3578a8" />
+        <StatCard label="On Going" value={String(counts["On Going"])} change={`${percentage(counts["On Going"])}% dari total`} icon={Activity} accent="#3578a8" />
+        <StatCard label="Pending" value={String(counts.Pending)} change="Menunggu mulai" icon={Clock3} accent="#d29b32" />
+        <StatCard label="Delay" value={String(counts.Delay)} change={`${overdue} lewat deadline`} icon={CircleAlert} accent="#d8564e" />
+        <StatCard label="Revisi" value={String(counts.Revisi)} change="Perlu tindak lanjut" icon={FileText} accent="#825a9f" />
+        <StatCard label="Done" value={String(counts.Done)} change={`${percentage(counts.Done)}% dari total`} icon={Check} accent="#4f826c" />
       </div>
 
       <div className="mt-7 grid gap-6 xl:grid-cols-[1.5fr_1fr]">
         <section className="bg-white p-5 md:p-6">
           <div className="mb-5 flex items-center justify-between"><div><h2 className="font-serif text-xl font-semibold">Gambaran project</h2><p className="mt-1 text-xs text-[#7b8387]">Distribusi pekerjaan aktif per status</p></div><button onClick={() => goTo("tracker")} className="text-xs font-bold text-[#e76f36] hover:underline">Lihat board</button></div>
           <div className="grid gap-6 md:grid-cols-[190px_1fr] md:items-center">
-            <div className="mx-auto grid h-40 w-40 place-items-center rounded-full" style={{ background: "conic-gradient(#3578a8 0 42%, #d8564e 42% 54%, #d29b32 54% 71%, #825a9f 71% 83%, #4f826c 83% 100%)" }}>
-              <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center"><div><div className="font-serif text-3xl font-semibold">24</div><div className="text-[10px] uppercase tracking-widest text-[#899095]">project</div></div></div>
+            <div className="mx-auto grid h-40 w-40 place-items-center rounded-full" style={{ background: chartBackground }}>
+              <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center"><div><div className="font-serif text-3xl font-semibold">{total}</div><div className="text-[10px] uppercase tracking-widest text-[#899095]">project</div></div></div>
             </div>
             <div className="space-y-3">
-              {(["On Going", "Pending", "Delay", "Revisi", "Done"] as Status[]).map((status, i) => {
-                const values = [8, 4, 3, 2, 7];
-                return <div key={status} className="grid grid-cols-[100px_1fr_24px] items-center gap-3 text-xs"><span className="flex items-center gap-2 font-medium"><i className={cn("h-2 w-2 rounded-full", statusMeta[status].dot)} />{status}</span><span className="h-1.5 overflow-hidden rounded-full bg-[#ebe9e3]"><i className={cn("block h-full rounded-full", statusMeta[status].dot)} style={{ width: `${values[i] * 10}%` }} /></span><b className="text-right">{values[i]}</b></div>;
-              })}
+              {chartStatuses.map((status) => <div key={status} className="grid grid-cols-[100px_1fr_24px] items-center gap-3 text-xs"><span className="flex items-center gap-2 font-medium"><i className={cn("h-2 w-2 rounded-full", statusMeta[status].dot)} />{status}</span><span className="h-1.5 overflow-hidden rounded-full bg-[#ebe9e3]"><i className={cn("block h-full rounded-full", statusMeta[status].dot)} style={{ width: `${percentage(counts[status])}%` }} /></span><b className="text-right">{counts[status]}</b></div>)}
             </div>
           </div>
         </section>
 
-        <DeadlineReminder items={dashboardDeadlineReminders} onOpenCalendar={() => goTo("calendar")} />
+        <DeadlineReminder items={deadlineItems} onOpenCalendar={() => goTo("calendar")} />
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[1.12fr_.88fr]">
@@ -526,33 +575,35 @@ function Dashboard({ projects, goTo }: { projects: Project[]; goTo: (v: View) =>
           <div className="mb-4 flex items-center justify-between"><h2 className="font-serif text-xl font-semibold">Perlu perhatian</h2><Badge className="bg-[#f9e8e5] text-[#b9433d]">{attention.length} project</Badge></div>
           <div className="divide-y divide-[#ece9e1]">
             {attention.slice(0, 3).map((p) => <button onClick={() => goTo("tracker")} key={p.id} className="group flex w-full items-center gap-4 py-3.5 text-left"><span className={cn("h-10 w-1 rounded-full", statusMeta[p.status].dot)} /><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><div className="truncate text-sm font-semibold group-hover:text-[#e76f36]">{p.title}</div><Badge className={cn("shrink-0", statusMeta[p.status].soft, statusMeta[p.status].text)}>{p.status}</Badge></div><div className="mt-1 text-xs text-[#858c90]">{p.category} · {p.deadline}</div></div><MiniAvatar initials={p.initials} /><ChevronRight size={16} className="text-[#a1a6a8]" /></button>)}
+            {attention.length === 0 && <div className="py-10 text-center text-xs text-[#8a9194]">Belum ada project berstatus Delay atau Revisi.</div>}
           </div>
         </section>
-        <RecentActivityList items={dashboardRecentActivities} onViewAll={() => goTo("activity")} />
+        <RecentActivityList items={recentActivities} onViewAll={() => goTo("activity")} />
       </div>
     </div>
   );
 }
 
-function AddProjectDialog({ open, onOpenChange, onAdd }: { open: boolean; onOpenChange: (v: boolean) => void; onAdd: (project: Project) => void }) {
+function AddProjectDialog({ open, defaultDeadline, onOpenChange, onAdd }: { open: boolean; defaultDeadline: string; onOpenChange: (v: boolean) => void; onAdd: (project: Project) => void }) {
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState<Status>("On Going");
   const [pic, setPic] = useState("Angga Ramadhan");
-  const [deadline, setDeadline] = useState("2026-09-15");
+  const [deadline, setDeadline] = useState(defaultDeadline);
   const [priority, setPriority] = useState<Priority>("Medium");
   const [category, setCategory] = useState("Desk Research");
   const [note, setNote] = useState("");
   const [workingDocLink, setWorkingDocLink] = useState("");
+  useEffect(() => { if (open) setDeadline(defaultDeadline); }, [defaultDeadline, open]);
   const submit = () => {
     if (!title.trim()) return;
     const initials = pic.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
     const deadlineIso = `${deadline}T17:00:00+07:00`;
     const deadlineLabel = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short" }).format(new Date(deadlineIso)).replace(".", "");
-    onAdd({ id: Date.now(), title: title.trim(), status, priority, category, pic, initials, deadline: deadlineLabel, deadlineIso, note: note.trim() || "Belum ada catatan project.", workingDocLink: workingDocLink.trim() || undefined });
+    onAdd({ id: Date.now(), title: title.trim(), status, priority, category, pic, initials, deadline: deadlineLabel, deadlineIso, completedAtIso: status === "Done" ? new Date().toISOString() : undefined, note: note.trim() || "Belum ada catatan project.", workingDocLink: workingDocLink.trim() || undefined });
     setTitle("");
     setStatus("On Going");
     setPic("Angga Ramadhan");
-    setDeadline("2026-09-15");
+    setDeadline(defaultDeadline);
     setPriority("Medium");
     setCategory("Desk Research");
     setNote("");
@@ -612,9 +663,8 @@ function MonthYearPicker({ month, year, mode, onChange }: { month: number; year:
 
 function ProjectTracker({ projects, setProjects, backendEnabled }: { projects: Project[]; setProjects: React.Dispatch<React.SetStateAction<Project[]>>; backendEnabled: boolean }) {
   const [search, setSearch] = useState("");
-  const [period, setPeriod] = useState({ month: 7, year: 2026 });
+  const [period, setPeriod] = useState(() => { const today = new Date(); return { month: today.getMonth(), year: today.getFullYear() }; });
   const [periodMode, setPeriodMode] = useState<"month" | "year">("month");
-  const [periodLoading, setPeriodLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
   const [picFilter, setPicFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -623,19 +673,7 @@ function ProjectTracker({ projects, setProjects, backendEnabled }: { projects: P
   const [selected, setSelected] = useState<Project | null>(null);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  useEffect(() => {
-    if (!backendEnabled) return;
-    const controller = new AbortController();
-    const params = new URLSearchParams({ year: String(period.year) });
-    if (periodMode === "month") params.set("month", String(period.month + 1));
-    setPeriodLoading(true);
-    fetch(`/api/projects?${params.toString()}`, { signal: controller.signal })
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load project period")))
-      .then((payload: { data: ApiProject[] }) => setProjects(payload.data.map(fromApiProject)))
-      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) return; })
-      .finally(() => { if (!controller.signal.aborted) setPeriodLoading(false); });
-    return () => controller.abort();
-  }, [backendEnabled, period.month, period.year, periodMode, setProjects]);
+  const [projectError, setProjectError] = useState("");
   const pics = Array.from(new Set(projects.map((project) => project.pic))).sort();
   const categories = Array.from(new Set(projects.map((project) => project.category))).sort();
   const priorityRank: Record<Priority, number> = { High: 0, Medium: 1, Low: 2 };
@@ -653,15 +691,36 @@ function ProjectTracker({ projects, setProjects, backendEnabled }: { projects: P
     if (sortOrder === "title") return a.title.localeCompare(b.title, "id");
     return new Date(a.deadlineIso || "9999-12-31").getTime() - new Date(b.deadlineIso || "9999-12-31").getTime();
   });
+  const revealProject = (project: Project) => {
+    const relevantDate = project.status === "Done" ? project.completedAtIso || project.deadlineIso : project.deadlineIso;
+    if (relevantDate) {
+      const target = new Date(relevantDate);
+      setPeriod({ month: target.getMonth(), year: target.getFullYear() });
+      setPeriodMode("month");
+    }
+    setSearch("");
+    setStatusFilter("all");
+    setPicFilter("all");
+    setCategoryFilter("all");
+  };
   const createProject = async (project: Project) => {
+    setProjectError("");
+    revealProject(project);
+    setProjects((current) => [project, ...current]);
     if (!backendEnabled) {
-      setProjects((current) => [project, ...current]);
       return;
     }
-    const response = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toProjectPayload(project)) });
-    if (!response.ok) return;
-    const payload = await response.json() as { data: ApiProject };
-    setProjects((current) => [fromApiProject(payload.data), ...current]);
+    try {
+      const response = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toProjectPayload(project)) });
+      if (!response.ok) throw new Error("Project gagal disimpan");
+      const payload = await response.json() as { data: ApiProject };
+      const saved = fromApiProject(payload.data);
+      setProjects((current) => current.map((item) => item.id === project.id ? saved : item));
+      revealProject(saved);
+    } catch {
+      setProjects((current) => current.filter((item) => item.id !== project.id));
+      setProjectError("Project belum dapat disimpan. Silakan periksa koneksi lalu coba lagi.");
+    }
   };
   const saveProject = async (project: Project) => {
     if (!backendEnabled) {
@@ -700,12 +759,13 @@ function ProjectTracker({ projects, setProjects, backendEnabled }: { projects: P
   };
   return <div className="fade-up">
     <SectionHeading eyebrow="Track" title="Project Tracker" description="Pantau seluruh alur kerja tim. Tarik kartu untuk memperbarui status project secara langsung." action={<Button onClick={() => setAdding(true)}><Plus size={17} /> Tambah project</Button>} />
-    <div className="mb-3 flex flex-wrap items-center gap-2"><div className="inline-flex rounded-md border border-[#d9d7cf] bg-white p-1"><button type="button" onClick={() => setPeriodMode("month")} className={cn("rounded px-3 py-1.5 text-xs font-bold", periodMode === "month" ? "bg-[#193246] text-white" : "text-[#667278] hover:bg-[#f3f1eb]")}>Bulanan</button><button type="button" onClick={() => setPeriodMode("year")} className={cn("rounded px-3 py-1.5 text-xs font-bold", periodMode === "year" ? "bg-[#193246] text-white" : "text-[#667278] hover:bg-[#f3f1eb]")}>Tahunan</button></div><MonthYearPicker month={period.month} year={period.year} mode={periodMode} onChange={setPeriod} /><Button type="button" size="sm" variant="outline" onClick={() => { const today = new Date(); setPeriod({ month: today.getMonth(), year: today.getFullYear() }); setPeriodMode("month"); }}>Hari ini</Button><span className="ml-auto text-[11px] text-[#8a9194]">{periodLoading ? "Memuat periode..." : periodMode === "month" ? `Board ${monthNames[period.month]} ${period.year}` : `Board tahun ${period.year}`}</span></div>
+    <div className="mb-3 flex flex-wrap items-center gap-2"><div className="inline-flex rounded-md border border-[#d9d7cf] bg-white p-1"><button type="button" onClick={() => setPeriodMode("month")} className={cn("rounded px-3 py-1.5 text-xs font-bold", periodMode === "month" ? "bg-[#193246] text-white" : "text-[#667278] hover:bg-[#f3f1eb]")}>Bulanan</button><button type="button" onClick={() => setPeriodMode("year")} className={cn("rounded px-3 py-1.5 text-xs font-bold", periodMode === "year" ? "bg-[#193246] text-white" : "text-[#667278] hover:bg-[#f3f1eb]")}>Tahunan</button></div><MonthYearPicker month={period.month} year={period.year} mode={periodMode} onChange={setPeriod} /><Button type="button" size="sm" variant="outline" onClick={() => { const today = new Date(); setPeriod({ month: today.getMonth(), year: today.getFullYear() }); setPeriodMode("month"); }}>Hari ini</Button><span className="ml-auto text-[11px] text-[#8a9194]">{periodMode === "month" ? `Board ${monthNames[period.month]} ${period.year}` : `Board tahun ${period.year}`}</span></div>
+    {projectError && <div className="mb-4 border-l-2 border-[#d8564e] bg-[#f9e8e5] px-3 py-2 text-xs text-[#a43d37]">{projectError}</div>}
     <div className="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center"><div className="relative min-w-64 max-w-md flex-1"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8f9699]" /><Input value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" placeholder="Cari project, PIC, atau kategori..." /></div><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><label className="sr-only" htmlFor="status-filter">Filter status</label><select id="status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as Status | "all")} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua status</option>{Object.keys(statusMeta).map((status) => <option key={status} value={status}>{status}</option>)}</select><label className="sr-only" htmlFor="pic-filter">Filter PIC</label><select id="pic-filter" value={picFilter} onChange={(e) => setPicFilter(e.target.value)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua PIC</option>{pics.map((pic) => <option key={pic} value={pic}>{pic}</option>)}</select><label className="sr-only" htmlFor="category-filter">Filter kategori</label><select id="category-filter" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua kategori</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select><label className="sr-only" htmlFor="sort-projects">Urutkan project</label><select id="sort-projects" value={sortOrder} onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="deadline">Deadline terdekat</option><option value="priority">Prioritas tertinggi</option><option value="title">Nama A–Z</option></select></div><div className="xl:ml-auto text-xs text-[#7d8589]"><b className="text-[#183044]">{filtered.length}</b> project ditampilkan</div></div>
     <div className="thin-scrollbar -mx-5 overflow-x-auto px-5 pb-4 md:-mx-8 md:px-8"><div className="grid min-w-[1240px] grid-cols-5 gap-3">
       {(Object.keys(statusMeta) as Status[]).map((status) => { const list = filtered.filter((p) => p.status === status); return <section key={status} onDragOver={(e) => e.preventDefault()} onDrop={(e) => drop(e, status)} className="min-h-[580px] bg-[#eeece6] p-2.5"><div className="mb-3 flex items-center px-1 py-1"><i className={cn("mr-2 h-2.5 w-2.5 rounded-full", statusMeta[status].dot)} /><h2 className="text-xs font-bold uppercase tracking-[0.1em]">{status}</h2><span className="ml-auto rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#7e878b]">{list.length}</span></div><div className="space-y-2.5">{list.map((p) => <ProjectCard key={p.id} project={p} onClick={() => setSelected(p)} />)}{list.length === 0 && <div className="grid h-24 place-items-center border border-dashed border-[#cbc7bd] text-xs text-[#9a9c9a]">Tarik project ke sini</div>}</div></section>; })}
     </div></div>
-    <AddProjectDialog open={adding} onOpenChange={setAdding} onAdd={(project) => { void createProject(project); }} />
+    <AddProjectDialog open={adding} defaultDeadline={`${period.year}-${String(period.month + 1).padStart(2, "0")}-15`} onOpenChange={setAdding} onAdd={(project) => { void createProject(project); }} />
     <ProjectDetail project={selected} open={!!selected && !editing && !deleting} onOpenChange={(v) => !v && setSelected(null)} onEdit={() => setEditing(true)} onDelete={() => setDeleting(true)} />
     <EditProjectDialog project={selected} open={editing} onOpenChange={setEditing} onSave={(project) => { void saveProject(project); }} />
     <DeleteProjectDialog project={selected} open={deleting} onOpenChange={setDeleting} onConfirm={() => { if (selected) void deleteProject(selected); }} />
@@ -1327,13 +1387,15 @@ export default function Home() {
   const [demoMode, setDemoMode] = useState(false);
   const [demoReady, setDemoReady] = useState(false);
   const [active, setActive] = useState<View>("dashboard");
-  const [projects, setProjects] = useState<Project[]>(initialProjects);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [profile, setProfile] = useState<ProfileData>({ name: "Angga Demo", email: "angga.demo@ruangriset.id", role: "Research Lead", image: null });
   const [isAdmin, setIsAdmin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    setDemoMode(window.sessionStorage.getItem("ruang-riset-demo") === "true");
+    const storedDemoMode = window.sessionStorage.getItem("ruang-riset-demo") === "true";
+    setDemoMode(storedDemoMode);
+    if (storedDemoMode) setProjects(initialProjects);
     setDemoReady(true);
   }, []);
 
@@ -1367,10 +1429,10 @@ export default function Home() {
   }, [session]);
 
   if (isPending || !demoReady) return <div className="grid min-h-screen place-items-center bg-[#f5f3ed] text-[#e76f36]"><LoaderCircle className="animate-spin" size={28} /></div>;
-  if (!session && !demoMode) return <AuthScreen demoEnabled={process.env.NEXT_PUBLIC_ENABLE_DEMO !== "false"} onEnterDemo={() => { window.sessionStorage.setItem("ruang-riset-demo", "true"); setDemoMode(true); }} />;
+  if (!session && !demoMode) return <AuthScreen demoEnabled={process.env.NEXT_PUBLIC_ENABLE_DEMO !== "false"} onEnterDemo={() => { window.sessionStorage.setItem("ruang-riset-demo", "true"); setProjects(initialProjects); setDemoMode(true); }} />;
 
   const userName = profile.name;
-  const logout = () => { if (!session) { window.sessionStorage.removeItem("ruang-riset-demo"); setDemoMode(false); setActive("dashboard"); return; } void authClient.signOut().then(() => window.location.reload()); };
+  const logout = () => { if (!session) { window.sessionStorage.removeItem("ruang-riset-demo"); setProjects([]); setDemoMode(false); setActive("dashboard"); return; } void authClient.signOut().then(() => window.location.reload()); };
   const saveProfile = async (nextProfile: ProfileData) => {
     if (!session) {
       setProfile(nextProfile);
@@ -1387,7 +1449,7 @@ export default function Home() {
   };
 
   let page: React.ReactNode;
-  if (active === "dashboard") page = <Dashboard projects={projects} goTo={setActive} />;
+  if (active === "dashboard") page = <Dashboard projects={projects} goTo={setActive} backendEnabled={!!session} />;
   else if (active === "tracker") page = <ProjectTracker projects={projects} setProjects={setProjects} backendEnabled={!!session} />;
   else if (active === "calendar") page = <CalendarPlanner projects={projects} backendEnabled={!!session} />;
   else if (active === "library") page = <AssetLibrary backendEnabled={!!session} />;
@@ -1397,7 +1459,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#f5f3ed]">
-      <Sidebar active={active} onChange={setActive} open={menuOpen} onClose={() => setMenuOpen(false)} userName={userName} isAdmin={isAdmin} onProfile={() => { setActive("profile"); setMenuOpen(false); }} onLogout={logout} />
+      <Sidebar active={active} onChange={setActive} open={menuOpen} onClose={() => setMenuOpen(false)} userName={userName} projectCount={projects.length} isAdmin={isAdmin} onProfile={() => { setActive("profile"); setMenuOpen(false); }} onLogout={logout} />
       <div className="lg:pl-[252px]">
         <Header active={active} onMenu={() => setMenuOpen(true)} userName={userName} onProfile={() => setActive("profile")} onNavigate={setActive} backendEnabled={!!session} />
         <main className="mx-auto max-w-[1600px] px-5 py-7 md:px-8 md:py-9">{page}</main>
