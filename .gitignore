@@ -1,0 +1,24 @@
+# dependencies
+/node_modules
+/.pnpm-store
+
+# next.js
+/.next
+/out
+
+# local files
+.DS_Store
+*.pem
+.env*
+!.env.example
+/.codex
+
+# debug
+npm-debug.log*
+pnpm-debug.log*
+
+# local QA artifacts
+/activity-history-demo.png
+
+# typescript
+*.tsbuildinfo

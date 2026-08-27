@@ -1,0 +1,1178 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Activity,
+  Archive,
+  ArrowUpRight,
+  Bell,
+  Camera,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  Clock3,
+  ExternalLink,
+  FileText,
+  Filter,
+  FolderOpen,
+  GripVertical,
+  History,
+  LayoutDashboard,
+  Link2,
+  LoaderCircle,
+  LogIn,
+  Menu,
+  MoreHorizontal,
+  Plus,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import { authClient } from "@/lib/auth-client";
+
+type View = "dashboard" | "tracker" | "calendar" | "library" | "activity" | "profile";
+type Status = "On Going" | "Delay" | "Pending" | "Revisi" | "Done";
+type Priority = "High" | "Medium" | "Low";
+
+type Project = {
+  id: number;
+  title: string;
+  status: Status;
+  priority: Priority;
+  category: string;
+  pic: string;
+  initials: string;
+  deadline: string;
+  deadlineIso?: string;
+  completedAtIso?: string;
+  note: string;
+  workingDocLink?: string;
+};
+
+type ApiProject = Omit<Project, "deadline" | "note" | "initials" | "completedAtIso" | "workingDocLink"> & {
+  deadline: string;
+  doneAt: string | null;
+  description: string;
+  picInitials: string;
+  workingDocLink: string | null;
+};
+
+function fromApiProject(project: ApiProject): Project {
+  return {
+    ...project,
+    initials: project.picInitials,
+    deadline: new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short" }).format(new Date(project.deadline)).replace(".", ""),
+    deadlineIso: project.deadline,
+    completedAtIso: project.doneAt || undefined,
+    note: project.description,
+    workingDocLink: project.workingDocLink || undefined,
+  };
+}
+
+function toProjectPayload(project: Project) {
+  return {
+    title: project.title,
+    description: project.note,
+    pic: project.pic,
+    picInitials: project.initials,
+    deadline: project.deadlineIso || new Date().toISOString(),
+    status: project.status,
+    priority: project.priority,
+    category: project.category,
+    workingDocLink: project.workingDocLink || null,
+  };
+}
+
+const initialProjects: Project[] = [
+  { id: 1, title: "Riset Persepsi Publik Q3", status: "On Going", priority: "High", category: "Brand Research", pic: "Nadia Putri", initials: "NP", deadline: "28 Agu", deadlineIso: "2026-08-28T17:00:00+07:00", note: "Finalisasi kuesioner dan koordinasi distribusi dengan tim lapangan." },
+  { id: 2, title: "Social Listening — Isu Pangan", status: "On Going", priority: "Medium", category: "Social Listening", pic: "Arga Wibawa", initials: "AW", deadline: "02 Sep", deadlineIso: "2026-09-02T17:00:00+07:00", note: "Analisis percakapan organik dan pemetaan sentimen mingguan." },
+  { id: 3, title: "Pemetaan Media Nasional", status: "On Going", priority: "Low", category: "Media Mapping", pic: "Dita Anjani", initials: "DA", deadline: "05 Sep", deadlineIso: "2026-09-05T17:00:00+07:00", note: "Verifikasi profil dan jangkauan 60 media prioritas." },
+  { id: 4, title: "Audit Kanal Digital", status: "Delay", priority: "High", category: "Digital Audit", pic: "Fikri Ramadhan", initials: "FR", deadline: "24 Agu", deadlineIso: "2026-08-24T17:00:00+07:00", note: "Menunggu akses data analytics dari pihak klien." },
+  { id: 5, title: "FGD Komunitas Urban", status: "Delay", priority: "Medium", category: "Qualitative", pic: "Nadia Putri", initials: "NP", deadline: "26 Agu", deadlineIso: "2026-08-26T15:00:00+07:00", note: "Dua responden utama belum mengonfirmasi kehadiran." },
+  { id: 6, title: "Benchmark Industri Energi", status: "Pending", priority: "Medium", category: "Desk Research", pic: "Arga Wibawa", initials: "AW", deadline: "10 Sep", deadlineIso: "2026-09-10T17:00:00+07:00", note: "Brief internal selesai, menunggu material pendukung." },
+  { id: 7, title: "Survei Kepuasan Mitra", status: "Pending", priority: "Low", category: "Survey", pic: "Maya Kirana", initials: "MK", deadline: "12 Sep", deadlineIso: "2026-09-12T17:00:00+07:00", note: "Sampling frame sedang disusun." },
+  { id: 8, title: "Laporan Tren Gen Z", status: "Revisi", priority: "High", category: "Trend Report", pic: "Dita Anjani", initials: "DA", deadline: "27 Agu", deadlineIso: "2026-08-27T10:00:00+07:00", note: "Perbaiki narasi pada bagian implikasi bisnis dan executive summary." },
+  { id: 9, title: "Analisis Kompetitor Fintech", status: "Done", priority: "Medium", category: "Competitor", pic: "Fikri Ramadhan", initials: "FR", deadline: "19 Agu", deadlineIso: "2026-08-19T17:00:00+07:00", completedAtIso: "2026-08-21T15:30:00+07:00", note: "Laporan final sudah diserahkan dan diarsipkan." },
+  { id: 10, title: "Profil Audiens Podcast", status: "Done", priority: "Low", category: "Audience", pic: "Maya Kirana", initials: "MK", deadline: "16 Agu", deadlineIso: "2026-08-16T17:00:00+07:00", completedAtIso: "2026-08-18T11:00:00+07:00", note: "Dataset dan visualisasi final tersedia di Drive." },
+];
+
+const statusMeta: Record<Status, { dot: string; soft: string; text: string }> = {
+  "On Going": { dot: "bg-[#3578a8]", soft: "bg-[#e6f0f7]", text: "text-[#28658f]" },
+  Delay: { dot: "bg-[#d8564e]", soft: "bg-[#f9e8e5]", text: "text-[#b9433d]" },
+  Pending: { dot: "bg-[#d29b32]", soft: "bg-[#f7efdc]", text: "text-[#996c17]" },
+  Revisi: { dot: "bg-[#825a9f]", soft: "bg-[#efe8f4]", text: "text-[#6d468c]" },
+  Done: { dot: "bg-[#4f826c]", soft: "bg-[#e5efe9]", text: "text-[#3f6f5b]" },
+};
+
+const priorityMeta: Record<Priority, string> = {
+  High: "bg-[#f9e8e5] text-[#b9433d]",
+  Medium: "bg-[#f7efdc] text-[#996c17]",
+  Low: "bg-[#e7ecef] text-[#66757e]",
+};
+
+const navItems: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "tracker", label: "Project Tracker", icon: FolderOpen },
+  { id: "calendar", label: "Calendar Planner", icon: CalendarDays },
+  { id: "library", label: "Asset & Library", icon: Archive },
+  { id: "activity", label: "Activity History", icon: History },
+];
+
+const teamColors: Record<string, string> = {
+  NP: "bg-[#dfeae5] text-[#315b4b]",
+  AW: "bg-[#e6edf4] text-[#355b7c]",
+  DA: "bg-[#f2e7dc] text-[#805a36]",
+  FR: "bg-[#ece5ef] text-[#684d76]",
+  MK: "bg-[#f5e5e5] text-[#8a5050]",
+};
+
+function MiniAvatar({ initials, className }: { initials: string; className?: string }) {
+  return (
+    <Avatar className={cn("h-7 w-7 ring-2 ring-white", className)}>
+      <AvatarFallback className={cn("text-[10px]", teamColors[initials] || "")}>{initials}</AvatarFallback>
+    </Avatar>
+  );
+}
+
+function Sidebar({ active, onChange, open, onClose, userName, onProfile, onLogout }: { active: View; onChange: (v: View) => void; open: boolean; onClose: () => void; userName: string; onProfile: () => void; onLogout: () => void }) {
+  return (
+    <>
+      {open && <button className="fixed inset-0 z-30 bg-[#122838]/45 lg:hidden" onClick={onClose} aria-label="Tutup navigasi" />}
+      <aside className={cn("fixed inset-y-0 left-0 z-40 flex w-[252px] flex-col bg-[#193246] px-4 py-5 text-white transition-transform lg:translate-x-0", open ? "translate-x-0" : "-translate-x-full")}>
+        <div className="flex items-center justify-between px-2">
+          <button onClick={() => onChange("dashboard")} className="flex items-center gap-3 text-left">
+            <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#e76f36] text-lg font-black">R</span>
+            <span>
+              <span className="block font-serif text-xl font-semibold leading-none">Ruang Riset</span>
+              <span className="mt-1 block text-[10px] uppercase tracking-[0.2em] text-[#9eb0bc]">Center of Research</span>
+            </span>
+          </button>
+          <button className="text-[#9eb0bc] lg:hidden" onClick={onClose}><X size={20} /></button>
+        </div>
+
+        <div className="mt-10 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#7790a0]">Workspace</div>
+        <nav className="mt-3 space-y-1">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const selected = active === item.id;
+            return (
+              <button key={item.id} onClick={() => { onChange(item.id); onClose(); }} className={cn("flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition", selected ? "bg-white/10 font-semibold text-white" : "text-[#b7c4cc] hover:bg-white/[.06] hover:text-white")}>
+                <Icon size={18} strokeWidth={selected ? 2.3 : 1.8} />
+                {item.label}
+                {item.id === "tracker" && <span className="ml-auto rounded-full bg-[#e76f36] px-2 py-0.5 text-[10px] font-bold text-white">8</span>}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="mt-8 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#7790a0]">Tim aktif</div>
+        <div className="mt-4 flex items-center px-2">
+          {["NP", "AW", "DA", "FR"].map((x, i) => <MiniAvatar key={x} initials={x} className={cn(i > 0 && "-ml-2", "ring-[#193246]")} />)}
+          <span className="ml-3 text-xs text-[#9eb0bc]">+2 lainnya</span>
+        </div>
+
+        <div className="mt-auto border-t border-white/10 pt-4">
+          <button onClick={onProfile} className={cn("flex w-full items-center gap-3 rounded-md p-2 text-left hover:bg-white/[.06]", active === "profile" && "bg-white/10")} title="Buka profil">
+            <Avatar className="h-9 w-9"><AvatarFallback className="bg-[#e76f36] text-white">{userName.split(/\s+/).slice(0, 2).map((x) => x[0]).join("").toUpperCase()}</AvatarFallback></Avatar>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold">{userName}</span>
+              <span className="block text-xs text-[#91a4b0]">Lihat & edit profil</span>
+            </span>
+            <MoreHorizontal size={17} className="text-[#91a4b0]" />
+          </button>
+          <button onClick={onLogout} className="mt-1 w-full rounded-md px-3 py-2 text-left text-xs text-[#91a4b0] hover:bg-white/[.06] hover:text-white">Keluar dari workspace</button>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+type NotificationAlert = {
+  id: string | number;
+  title: string;
+  description: string;
+  time: string;
+  view: View;
+  kind: "deadline" | "project" | "agenda" | "activity";
+  read: boolean;
+};
+
+const notificationAlerts: NotificationAlert[] = [
+  { id: "deadline-audit", title: "Deadline project terlewat", description: "Audit Kanal Digital melewati deadline 24 Agu.", time: "Hari ini", view: "tracker", kind: "deadline", read: false },
+  { id: "status-fgd", title: "Status project berubah", description: "Nadia memindahkan FGD Komunitas Urban ke Delay.", time: "12 menit lalu", view: "activity", kind: "activity", read: false },
+  { id: "agenda-review", title: "Agenda segera dimulai", description: "Review laporan Gen Z dijadwalkan besok pukul 10.00.", time: "48 menit lalu", view: "calendar", kind: "agenda", read: false },
+];
+
+type ApiNotification = {
+  id: number;
+  kind: NotificationAlert["kind"];
+  title: string;
+  message: string;
+  targetView: View;
+  readAt: string | null;
+  createdAt: string;
+};
+
+const notificationAppearance = {
+  deadline: { icon: CircleAlert, tone: "bg-[#f9e8e5] text-[#b9433d]" },
+  project: { icon: FolderOpen, tone: "bg-[#e8efe9] text-[#3f7650]" },
+  agenda: { icon: CalendarDays, tone: "bg-[#f7efd9] text-[#a87318]" },
+  activity: { icon: Activity, tone: "bg-[#e6f0f7] text-[#3578a8]" },
+} satisfies Record<NotificationAlert["kind"], { icon: typeof Bell; tone: string }>;
+
+function notificationTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Baru saja";
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60_000));
+  if (elapsedMinutes < 1) return "Baru saja";
+  if (elapsedMinutes < 60) return `${elapsedMinutes} menit lalu`;
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours} jam lalu`;
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  if (elapsedDays < 7) return `${elapsedDays} hari lalu`;
+  return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: date.getFullYear() !== new Date().getFullYear() ? "numeric" : undefined }).format(date).replace(".", "");
+}
+
+function fromApiNotification(notification: ApiNotification): NotificationAlert {
+  return {
+    id: notification.id,
+    title: notification.title,
+    description: notification.message,
+    time: notificationTime(notification.createdAt),
+    view: notification.targetView,
+    kind: notification.kind,
+    read: Boolean(notification.readAt),
+  };
+}
+
+function Header({ active, onMenu, userName, onProfile, onNavigate, backendEnabled }: { active: View; onMenu: () => void; userName: string; onProfile: () => void; onNavigate: (view: View) => void; backendEnabled: boolean }) {
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [alerts, setAlerts] = useState<NotificationAlert[]>(notificationAlerts);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationError, setNotificationError] = useState("");
+  const notificationRef = useRef<HTMLDivElement>(null);
+  const title = active === "profile" ? "Profil" : navItems.find((n) => n.id === active)?.label ?? "Dashboard";
+  const unreadCount = alerts.filter((alert) => !alert.read).length;
+
+  const loadNotifications = useCallback(async (signal?: AbortSignal) => {
+    if (!backendEnabled) return;
+    setNotificationsLoading(true);
+    try {
+      const response = await fetch("/api/notifications?limit=20", { signal });
+      if (!response.ok) throw new Error("Gagal memuat notifikasi");
+      const payload = await response.json() as { data: ApiNotification[] };
+      setAlerts(payload.data.map(fromApiNotification));
+      setNotificationError("");
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") setNotificationError("Notifikasi belum dapat dimuat.");
+    } finally {
+      if (!signal?.aborted) setNotificationsLoading(false);
+    }
+  }, [backendEnabled]);
+
+  useEffect(() => {
+    if (!backendEnabled) {
+      setAlerts(notificationAlerts);
+      setNotificationError("");
+      setNotificationsLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    void loadNotifications(controller.signal);
+    const refresh = window.setInterval(() => void loadNotifications(), 60_000);
+    return () => {
+      controller.abort();
+      window.clearInterval(refresh);
+    };
+  }, [backendEnabled, loadNotifications]);
+
+  useEffect(() => {
+    if (notificationsOpen && backendEnabled) void loadNotifications();
+  }, [backendEnabled, loadNotifications, notificationsOpen]);
+
+  useEffect(() => {
+    if (!notificationsOpen) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!notificationRef.current?.contains(event.target as Node)) setNotificationsOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [notificationsOpen]);
+
+  const openAlert = async (alert: NotificationAlert) => {
+    if (!alert.read) {
+      setAlerts((current) => current.map((item) => item.id === alert.id ? { ...item, read: true } : item));
+      if (backendEnabled) {
+        try {
+          const response = await fetch(`/api/notifications/${alert.id}`, { method: "PATCH" });
+          if (!response.ok) throw new Error("Gagal menandai notifikasi");
+        } catch {
+          setAlerts((current) => current.map((item) => item.id === alert.id ? { ...item, read: false } : item));
+          setNotificationError("Status notifikasi belum dapat disimpan.");
+        }
+      }
+    }
+    setNotificationsOpen(false);
+    onNavigate(alert.view);
+  };
+
+  const markAllRead = async () => {
+    const previous = alerts;
+    setAlerts((current) => current.map((alert) => ({ ...alert, read: true })));
+    if (!backendEnabled) return;
+    try {
+      const response = await fetch("/api/notifications", { method: "PATCH" });
+      if (!response.ok) throw new Error("Gagal menandai semua notifikasi");
+      setNotificationError("");
+    } catch {
+      setAlerts(previous);
+      setNotificationError("Status notifikasi belum dapat disimpan.");
+    }
+  };
+
+  return (
+    <header className="sticky top-0 z-20 flex h-[72px] items-center border-b border-[#dfddd5] bg-[#f5f3ed]/95 px-5 backdrop-blur md:px-8">
+      <button className="mr-3 text-[#183044] lg:hidden" onClick={onMenu}><Menu size={22} /></button>
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#8a9194]">Workspace /</div>
+        <div className="font-serif text-lg font-semibold text-[#183044]">{title}</div>
+      </div>
+      <div className="ml-auto flex items-center gap-2">
+        <div className="relative" ref={notificationRef}>
+          <button onClick={() => setNotificationsOpen((open) => !open)} className={cn("relative grid h-9 w-9 place-items-center rounded-full text-[#53626b] hover:bg-white", notificationsOpen && "bg-white text-[#183044]")} aria-label={`Notifikasi${unreadCount ? `, ${unreadCount} belum dibaca` : ""}`} aria-expanded={notificationsOpen} aria-haspopup="dialog">
+            <Bell size={19} />
+            {unreadCount > 0 && <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-[#e76f36] px-1 text-[9px] font-bold leading-none text-white ring-2 ring-[#f5f3ed]">{unreadCount}</span>}
+          </button>
+          {notificationsOpen && <div role="dialog" aria-label="Daftar notifikasi" className="absolute right-0 top-12 z-50 w-[min(360px,calc(100vw-2rem))] overflow-hidden border border-[#ddd9d0] bg-white shadow-[0_18px_50px_rgba(24,48,68,.18)]">
+            <div className="flex items-center justify-between border-b border-[#ebe8df] px-4 py-3"><div><h2 className="font-serif text-lg font-semibold text-[#183044]">Notifikasi</h2><p className="mt-0.5 text-[11px] text-[#879095]">{notificationsLoading && alerts.length === 0 ? "Memuat..." : unreadCount ? `${unreadCount} belum dibaca` : "Semua sudah dibaca"}</p></div>{unreadCount > 0 && <button onClick={() => void markAllRead()} className="text-[11px] font-bold text-[#e76f36] hover:underline">Tandai semua dibaca</button>}</div>
+            {notificationError && <div className="border-b border-[#f2d5cd] bg-[#fff6f2] px-4 py-2 text-[11px] text-[#a64d34]">{notificationError} <button onClick={() => void loadNotifications()} className="font-bold underline">Coba lagi</button></div>}
+            <div className="divide-y divide-[#eeeae2]">
+              {notificationsLoading && alerts.length === 0 && <div className="grid place-items-center py-10 text-[#e76f36]"><LoaderCircle className="animate-spin" size={22} /></div>}
+              {!notificationsLoading && alerts.length === 0 && <div className="px-6 py-10 text-center"><Bell className="mx-auto text-[#b3b7b8]" size={24} /><p className="mt-3 text-sm font-semibold text-[#53626b]">Belum ada notifikasi</p><p className="mt-1 text-xs text-[#8a9194]">Update project dan agenda akan muncul di sini.</p></div>}
+              {alerts.map((alert) => { const appearance = notificationAppearance[alert.kind]; const Icon = appearance.icon; return <button key={alert.id} onClick={() => void openAlert(alert)} className={cn("flex w-full gap-3 px-4 py-3.5 text-left transition hover:bg-[#f7f5ef]", !alert.read && "bg-[#fffaf5]")}><span className={cn("mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full", appearance.tone)}><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="flex items-start gap-2"><span className="flex-1 text-sm font-semibold text-[#183044]">{alert.title}</span>{!alert.read && <i className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#e76f36]" />}</span><span className="mt-1 block text-xs leading-5 text-[#687378]">{alert.description}</span><span className="mt-1 block text-[10px] text-[#9a9fa2]">{alert.time}</span></span></button>; })}
+            </div>
+            <button onClick={() => { setNotificationsOpen(false); onNavigate("activity"); }} className="w-full border-t border-[#ebe8df] px-4 py-3 text-center text-xs font-bold text-[#e76f36] hover:bg-[#faf8f3]">Buka Activity History</button>
+          </div>}
+        </div>
+        <button onClick={onProfile} className="ml-2 hidden items-center gap-2 rounded-full border border-[#dcd9d1] bg-white py-1 pl-1 pr-3 hover:border-[#c9c5ba] sm:flex">
+          <MiniAvatar initials={userName.split(/\s+/).slice(0, 2).map((x) => x[0]).join("").toUpperCase()} />
+          <span className="text-xs font-semibold">{userName.split(" ")[0]}</span>
+          <ChevronDown size={13} className="text-[#8a9194]" />
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function SectionHeading({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) {
+  return (
+    <div className="mb-7 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <div>
+        <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#e76f36]"><span className="h-px w-7 bg-[#e76f36]" />{eyebrow}</div>
+        <h1 className="font-serif text-3xl font-semibold tracking-[-0.02em] text-[#183044] md:text-[38px]">{title}</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6b7377]">{description}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function StatCard({ label, value, change, icon: Icon, accent }: { label: string; value: string; change: string; icon: typeof Activity; accent: string }) {
+  return (
+    <article className="border-t-2 bg-white px-5 py-4 shadow-[0_1px_0_rgba(24,48,68,.05)]" style={{ borderTopColor: accent }}>
+      <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.11em] text-[#7b8387]"><span>{label}</span><Icon size={17} style={{ color: accent }} /></div>
+      <div className="mt-4 flex items-end justify-between gap-2"><strong className="font-serif text-4xl font-semibold text-[#183044]">{value}</strong><span className="mb-1 text-[11px] text-[#7b8387]">{change}</span></div>
+    </article>
+  );
+}
+
+type RecentActivityItem = {
+  initials: string;
+  content: React.ReactNode;
+  time: string;
+};
+
+const dashboardRecentActivities: RecentActivityItem[] = [
+  { initials: "NP", content: <><b>Nadia</b> memindahkan <b>FGD Komunitas Urban</b> ke Delay</>, time: "12 menit lalu" },
+  { initials: "DA", content: <><b>Dita</b> menambahkan catatan revisi baru</>, time: "48 menit lalu" },
+  { initials: "AW", content: <><b>Arga</b> mengubah deadline Benchmark Industri</>, time: "2 jam lalu" },
+];
+
+function RecentActivityList({ items, onViewAll }: { items: RecentActivityItem[]; onViewAll: () => void }) {
+  return (
+    <section className="bg-white p-5 md:p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="font-serif text-xl font-semibold">Aktivitas terbaru</h2>
+        <button onClick={onViewAll} className="text-xs font-bold text-[#e76f36] hover:underline">Lihat semua</button>
+      </div>
+      <div className="space-y-4">
+        {items.map((activity, index) => (
+          <div className="flex gap-3" key={`${activity.initials}-${index}`}>
+            <MiniAvatar initials={activity.initials} />
+            <div className="text-xs leading-5 text-[#59656c]">
+              <div>{activity.content}</div>
+              <div className="text-[10px] text-[#9a9fa2]">{activity.time}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+type DeadlineReminderItem = {
+  day: string;
+  month: string;
+  title: string;
+  meta: string;
+  type: "Deadline" | "Agenda";
+};
+
+const dashboardDeadlineReminders: DeadlineReminderItem[] = [
+  { day: "28", month: "Agu", title: "Riset Persepsi Publik Q3", meta: "17.00 • Nadia", type: "Deadline" },
+  { day: "29", month: "Agu", title: "Review laporan Gen Z", meta: "10.00 • Dita, Angga", type: "Agenda" },
+  { day: "01", month: "Sep", title: "Kickoff riset otomotif", meta: "09.30 • Semua tim", type: "Agenda" },
+  { day: "02", month: "Sep", title: "Social Listening — Isu Pangan", meta: "17.00 • Arga", type: "Deadline" },
+];
+
+function DeadlineReminder({ items, onOpenCalendar }: { items: DeadlineReminderItem[]; onOpenCalendar: () => void }) {
+  return (
+    <section className="bg-[#193246] p-5 text-white md:p-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.17em] text-[#e9a17d]">Deadline & agenda</div>
+          <h2 className="mt-2 font-serif text-2xl font-semibold">7 hari ke depan</h2>
+        </div>
+        <CalendarDays className="text-[#e9a17d]" size={22} />
+      </div>
+      <div className="mt-6 space-y-1">
+        {items.map((item) => (
+          <div key={`${item.day}-${item.title}`} className="flex items-center gap-4 border-b border-white/10 py-3 last:border-0">
+            <div className="w-9 text-center">
+              <div className="font-serif text-2xl font-semibold leading-none">{item.day}</div>
+              <div className="mt-1 text-[9px] uppercase tracking-widest text-[#90a4b1]">{item.month}</div>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <div className="truncate text-sm font-semibold">{item.title}</div>
+                <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide", item.type === "Deadline" ? "bg-[#d8564e]/20 text-[#f0a09b]" : "bg-[#3578a8]/25 text-[#9dcced]")}>{item.type}</span>
+              </div>
+              <div className="mt-1 text-[11px] text-[#9eb0bc]">{item.meta}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <button onClick={onOpenCalendar} className="mt-5 flex items-center gap-2 text-xs font-bold text-[#e9a17d] hover:underline">Buka kalender <ArrowUpRight size={14} /></button>
+    </section>
+  );
+}
+
+function Dashboard({ projects, goTo }: { projects: Project[]; goTo: (v: View) => void }) {
+  const dashboardProjects = projects.length > 0 ? projects : initialProjects;
+  const attention = dashboardProjects.filter((p) => p.status === "Delay" || p.status === "Revisi");
+  return (
+    <div className="fade-up">
+      <SectionHeading eyebrow="Rabu, 26 Agustus 2026" title="Selamat siang, Angga." description="Berikut denyut terbaru tim riset. Ada tiga item yang perlu ditindaklanjuti hari ini." action={<Button onClick={() => goTo("tracker")}><Plus size={17} /> Tambah project</Button>} />
+
+      <div className="grid gap-px overflow-hidden border border-[#ddd9d0] bg-[#ddd9d0] sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        <StatCard label="Total project" value="24" change="+3 bulan ini" icon={FolderOpen} accent="#3578a8" />
+        <StatCard label="On Going" value="8" change="33% dari total" icon={Activity} accent="#3578a8" />
+        <StatCard label="Pending" value="4" change="Menunggu mulai" icon={Clock3} accent="#d29b32" />
+        <StatCard label="Delay" value="3" change="2 lewat deadline" icon={CircleAlert} accent="#d8564e" />
+        <StatCard label="Revisi" value="2" change="Perlu tindak lanjut" icon={FileText} accent="#825a9f" />
+        <StatCard label="Done" value="7" change="29% dari total" icon={Check} accent="#4f826c" />
+      </div>
+
+      <div className="mt-7 grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+        <section className="bg-white p-5 md:p-6">
+          <div className="mb-5 flex items-center justify-between"><div><h2 className="font-serif text-xl font-semibold">Gambaran project</h2><p className="mt-1 text-xs text-[#7b8387]">Distribusi pekerjaan aktif per status</p></div><button onClick={() => goTo("tracker")} className="text-xs font-bold text-[#e76f36] hover:underline">Lihat board</button></div>
+          <div className="grid gap-6 md:grid-cols-[190px_1fr] md:items-center">
+            <div className="mx-auto grid h-40 w-40 place-items-center rounded-full" style={{ background: "conic-gradient(#3578a8 0 42%, #d8564e 42% 54%, #d29b32 54% 71%, #825a9f 71% 83%, #4f826c 83% 100%)" }}>
+              <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center"><div><div className="font-serif text-3xl font-semibold">24</div><div className="text-[10px] uppercase tracking-widest text-[#899095]">project</div></div></div>
+            </div>
+            <div className="space-y-3">
+              {(["On Going", "Pending", "Delay", "Revisi", "Done"] as Status[]).map((status, i) => {
+                const values = [8, 4, 3, 2, 7];
+                return <div key={status} className="grid grid-cols-[100px_1fr_24px] items-center gap-3 text-xs"><span className="flex items-center gap-2 font-medium"><i className={cn("h-2 w-2 rounded-full", statusMeta[status].dot)} />{status}</span><span className="h-1.5 overflow-hidden rounded-full bg-[#ebe9e3]"><i className={cn("block h-full rounded-full", statusMeta[status].dot)} style={{ width: `${values[i] * 10}%` }} /></span><b className="text-right">{values[i]}</b></div>;
+              })}
+            </div>
+          </div>
+        </section>
+
+        <DeadlineReminder items={dashboardDeadlineReminders} onOpenCalendar={() => goTo("calendar")} />
+      </div>
+
+      <div className="mt-6 grid gap-6 xl:grid-cols-[1.12fr_.88fr]">
+        <section className="bg-white p-5 md:p-6">
+          <div className="mb-4 flex items-center justify-between"><h2 className="font-serif text-xl font-semibold">Perlu perhatian</h2><Badge className="bg-[#f9e8e5] text-[#b9433d]">{attention.length} project</Badge></div>
+          <div className="divide-y divide-[#ece9e1]">
+            {attention.slice(0, 3).map((p) => <button onClick={() => goTo("tracker")} key={p.id} className="group flex w-full items-center gap-4 py-3.5 text-left"><span className={cn("h-10 w-1 rounded-full", statusMeta[p.status].dot)} /><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><div className="truncate text-sm font-semibold group-hover:text-[#e76f36]">{p.title}</div><Badge className={cn("shrink-0", statusMeta[p.status].soft, statusMeta[p.status].text)}>{p.status}</Badge></div><div className="mt-1 text-xs text-[#858c90]">{p.category} · {p.deadline}</div></div><MiniAvatar initials={p.initials} /><ChevronRight size={16} className="text-[#a1a6a8]" /></button>)}
+          </div>
+        </section>
+        <RecentActivityList items={dashboardRecentActivities} onViewAll={() => goTo("activity")} />
+      </div>
+    </div>
+  );
+}
+
+function AddProjectDialog({ open, onOpenChange, onAdd }: { open: boolean; onOpenChange: (v: boolean) => void; onAdd: (project: Project) => void }) {
+  const [title, setTitle] = useState("");
+  const [status, setStatus] = useState<Status>("On Going");
+  const [pic, setPic] = useState("Angga Ramadhan");
+  const [deadline, setDeadline] = useState("2026-09-15");
+  const [priority, setPriority] = useState<Priority>("Medium");
+  const [category, setCategory] = useState("Desk Research");
+  const [note, setNote] = useState("");
+  const [workingDocLink, setWorkingDocLink] = useState("");
+  const submit = () => {
+    if (!title.trim()) return;
+    const initials = pic.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+    const deadlineIso = `${deadline}T17:00:00+07:00`;
+    const deadlineLabel = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short" }).format(new Date(deadlineIso)).replace(".", "");
+    onAdd({ id: Date.now(), title: title.trim(), status, priority, category, pic, initials, deadline: deadlineLabel, deadlineIso, note: note.trim() || "Belum ada catatan project.", workingDocLink: workingDocLink.trim() || undefined });
+    setTitle("");
+    setStatus("On Going");
+    setPic("Angga Ramadhan");
+    setDeadline("2026-09-15");
+    setPriority("Medium");
+    setCategory("Desk Research");
+    setNote("");
+    setWorkingDocLink("");
+    onOpenChange(false);
+  };
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>Tambah project baru</DialogTitle><DialogDescription>Lengkapi informasi utama agar project siap dilacak oleh seluruh tim.</DialogDescription></DialogHeader><div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1 thin-scrollbar"><label className="block text-xs font-bold text-[#59656c]">Nama project<Input className="mt-2" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Contoh: Riset Lanskap Industri 2026" autoFocus /></label><div className="grid gap-4 sm:grid-cols-2"><label className="text-xs font-bold text-[#59656c]">Status<select value={status} onChange={(e) => setStatus(e.target.value as Status)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal">{Object.keys(statusMeta).map((s) => <option key={s}>{s}</option>)}</select></label><label className="text-xs font-bold text-[#59656c]">PIC<select value={pic} onChange={(e) => setPic(e.target.value)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal"><option>Angga Ramadhan</option><option>Nadia Putri</option><option>Arga Wibawa</option><option>Dita Anjani</option><option>Fikri Ramadhan</option><option>Maya Kirana</option></select></label><label className="text-xs font-bold text-[#59656c]">Deadline<Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="mt-2 font-normal" required /></label><label className="text-xs font-bold text-[#59656c]">Prioritas<select value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal"><option>High</option><option>Medium</option><option>Low</option></select></label></div><label className="block text-xs font-bold text-[#59656c]">Kategori<Input value={category} onChange={(e) => setCategory(e.target.value)} className="mt-2" placeholder="Contoh: Brand Research" required /></label><label className="block text-xs font-bold text-[#59656c]">Working document<Input type="url" value={workingDocLink} onChange={(e) => setWorkingDocLink(e.target.value)} className="mt-2" placeholder="https://docs.google.com/..." /></label><label className="block text-xs font-bold text-[#59656c]">Catatan<textarea value={note} onChange={(e) => setNote(e.target.value)} className="mt-2 min-h-24 w-full resize-none rounded-md border border-[#d9d7cf] bg-white p-3 text-sm outline-none focus:border-[#e76f36]" placeholder="Tambahkan konteks singkat untuk tim..." /></label><div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button><Button onClick={submit} disabled={!title.trim() || !deadline || !category.trim()}><Plus size={16} /> Buat project</Button></div></div></DialogContent></Dialog>;
+}
+
+function EditProjectDialog({ project, open, onOpenChange, onSave }: { project: Project | null; open: boolean; onOpenChange: (v: boolean) => void; onSave: (project: Project) => void }) {
+  const [draft, setDraft] = useState<Project | null>(project);
+  useEffect(() => { if (project && open) setDraft(project); }, [project, open]);
+  if (!draft) return null;
+  const update = <K extends keyof Project>(key: K, value: Project[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
+  const save = () => {
+    if (!draft.title.trim() || !draft.category.trim()) return;
+    const deadlineIso = draft.deadlineIso || "2026-09-15T17:00:00+07:00";
+    const deadline = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short" }).format(new Date(deadlineIso)).replace(".", "");
+    onSave({ ...draft, title: draft.title.trim(), category: draft.category.trim(), deadline });
+    onOpenChange(false);
+  };
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>Edit project</DialogTitle><DialogDescription>Perbarui informasi project. Perubahan langsung terlihat di board mock.</DialogDescription></DialogHeader><div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1 thin-scrollbar"><label className="block text-xs font-bold text-[#59656c]">Nama project<Input className="mt-2" value={draft.title} onChange={(e) => update("title", e.target.value)} autoFocus /></label><div className="grid gap-4 sm:grid-cols-2"><label className="text-xs font-bold text-[#59656c]">Status<select value={draft.status} onChange={(e) => update("status", e.target.value as Status)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal">{Object.keys(statusMeta).map((status) => <option key={status}>{status}</option>)}</select></label><label className="text-xs font-bold text-[#59656c]">PIC<select value={draft.pic} onChange={(e) => { const pic = e.target.value; update("pic", pic); update("initials", pic.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()); }} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal"><option>Angga Ramadhan</option><option>Nadia Putri</option><option>Arga Wibawa</option><option>Dita Anjani</option><option>Fikri Ramadhan</option><option>Maya Kirana</option></select></label><label className="text-xs font-bold text-[#59656c]">Deadline<Input type="date" value={(draft.deadlineIso || "2026-09-15").slice(0, 10)} onChange={(e) => update("deadlineIso", `${e.target.value}T17:00:00+07:00`)} className="mt-2 font-normal" /></label><label className="text-xs font-bold text-[#59656c]">Prioritas<select value={draft.priority} onChange={(e) => update("priority", e.target.value as Priority)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal"><option>High</option><option>Medium</option><option>Low</option></select></label></div><label className="block text-xs font-bold text-[#59656c]">Kategori<Input className="mt-2" value={draft.category} onChange={(e) => update("category", e.target.value)} /></label><label className="block text-xs font-bold text-[#59656c]">Working document<Input type="url" className="mt-2" value={draft.workingDocLink || ""} onChange={(e) => update("workingDocLink", e.target.value)} placeholder="https://docs.google.com/..." /></label><label className="block text-xs font-bold text-[#59656c]">Catatan<textarea value={draft.note} onChange={(e) => update("note", e.target.value)} className="mt-2 min-h-24 w-full resize-none rounded-md border border-[#d9d7cf] bg-white p-3 text-sm outline-none focus:border-[#e76f36]" /></label><div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button><Button onClick={save} disabled={!draft.title.trim() || !draft.category.trim()}><Check size={16} /> Simpan perubahan</Button></div></div></DialogContent></Dialog>;
+}
+
+function DeleteProjectDialog({ project, open, onOpenChange, onConfirm }: { project: Project | null; open: boolean; onOpenChange: (v: boolean) => void; onConfirm: () => void }) {
+  if (!project) return null;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><div className="mb-3 grid h-11 w-11 place-items-center rounded-full bg-[#f9e8e5] text-[#b9433d]"><Trash2 size={20} /></div><DialogTitle>Hapus project ini?</DialogTitle><DialogDescription><b className="text-[#183044]">{project.title}</b> akan dihapus dari board. Tindakan ini tidak dapat dibatalkan.</DialogDescription></DialogHeader><div className="flex justify-end gap-2 pt-3"><Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button><Button className="bg-[#c84942] hover:bg-[#ae3d37]" onClick={onConfirm}><Trash2 size={16} /> Hapus project</Button></div></DialogContent></Dialog>;
+}
+
+function ProjectDetail({ project, open, onOpenChange, onEdit, onDelete }: { project: Project | null; open: boolean; onOpenChange: (v: boolean) => void; onEdit: () => void; onDelete: () => void }) {
+  if (!project) return null;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] overflow-y-auto thin-scrollbar"><DialogHeader><div className="mb-3 flex items-center gap-2"><Badge className={cn(statusMeta[project.status].soft, statusMeta[project.status].text)}>{project.status}</Badge><Badge className={priorityMeta[project.priority]}>{project.priority}</Badge></div><DialogTitle>{project.title}</DialogTitle><DialogDescription>{project.category}</DialogDescription></DialogHeader><div className="grid grid-cols-2 gap-4 border-y border-[#e5e2da] py-4"><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">PIC</div><div className="mt-2 flex items-center gap-2 text-sm font-semibold"><MiniAvatar initials={project.initials} />{project.pic}</div></div><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Deadline</div><div className="mt-3 flex items-center gap-2 text-sm font-semibold"><CalendarDays size={15} className="text-[#e76f36]" />{project.deadline} 2026</div></div></div><div className="space-y-4 py-4"><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Catatan project</div><p className="mt-2 text-sm leading-6 text-[#59656c]">{project.note}</p></div><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Working document</div><div className="mt-2 flex items-center gap-2 text-xs text-[#68747a]"><Link2 size={14} className="text-[#e76f36]" /><span className="truncate">{project.workingDocLink || "Belum ditambahkan"}</span></div></div></div><div className="mb-5 border-t border-[#e5e2da] pt-4"><div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[#92989b]"><History size={13} />Riwayat aktivitas</div><div className="space-y-3">{[{ text: `Status diperbarui menjadi ${project.status}`, time: "12 menit lalu" }, { text: `${project.pic} ditetapkan sebagai PIC`, time: "Kemarin, 14.20" }, { text: "Project dibuat di workspace", time: "3 hari lalu" }].map((activity, index) => <div key={activity.text} className="grid grid-cols-[12px_1fr] gap-2.5"><div className="relative flex justify-center"><span className={cn("mt-1.5 h-2 w-2 rounded-full", index === 0 ? "bg-[#e76f36]" : "bg-[#bbc1c3]")} />{index < 2 && <span className="absolute left-1/2 top-4 h-7 w-px -translate-x-1/2 bg-[#dedbd3]" />}</div><div><div className="text-xs font-medium text-[#44545d]">{activity.text}</div><div className="mt-0.5 text-[10px] text-[#949a9d]">{activity.time}</div></div></div>)}</div></div><div className="flex flex-col gap-2 sm:flex-row"><Button className="flex-1" disabled={!project.workingDocLink} onClick={() => project.workingDocLink && window.open(project.workingDocLink, "_blank", "noopener,noreferrer")}><FileText size={16} /> Buka working document</Button><Button variant="outline" onClick={onEdit}><MoreHorizontal size={16} /> Edit</Button><Button variant="outline" className="border-[#e2b9b5] text-[#b9433d] hover:bg-[#f9e8e5]" onClick={onDelete}><Trash2 size={16} /> Hapus</Button></div></DialogContent></Dialog>;
+}
+
+function ProjectCard({ project, onClick }: { project: Project; onClick: () => void }) {
+  return (
+    <article draggable onDragStart={(e) => e.dataTransfer.setData("projectId", String(project.id))} onClick={onClick} className="group cursor-grab border border-[#e1ded5] bg-white p-3.5 shadow-[0_1px_1px_rgba(24,48,68,.04)] transition hover:-translate-y-0.5 hover:border-[#c9c5ba] hover:shadow-[0_5px_16px_rgba(24,48,68,.08)] active:cursor-grabbing">
+      <div className="flex items-start gap-2"><GripVertical size={14} className="mt-0.5 shrink-0 text-[#c0c2c1] opacity-0 transition group-hover:opacity-100" /><div className="min-w-0 flex-1"><div className="text-sm font-semibold leading-5 text-[#20394b]">{project.title}</div><div className="mt-1.5 text-[11px] text-[#8a9194]">{project.category}</div></div><button className="text-[#abb0b2]" onClick={(e) => e.stopPropagation()}><MoreHorizontal size={16} /></button></div>
+      <div className="mt-4 flex items-center justify-between border-t border-[#efede7] pt-3"><div className="flex items-center gap-2"><MiniAvatar initials={project.initials} /><span className="text-[11px] text-[#677278]">{project.pic.split(" ")[0]}</span></div><div className="flex items-center gap-2"><Badge className={priorityMeta[project.priority]}>{project.priority}</Badge>{project.status === "Delay" ? <span className="flex items-center gap-1 rounded-full bg-[#f9e8e5] px-2 py-1 text-[9px] font-bold text-[#b9433d]"><CircleAlert size={11} />Terlambat · {project.deadline}</span> : <span className="flex items-center gap-1 text-[10px] text-[#7f888d]"><Clock3 size={11} />{project.deadline}</span>}</div></div>
+    </article>
+  );
+}
+
+const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+
+function MonthYearPicker({ month, year, mode, onChange }: { month: number; year: number; mode: "month" | "year"; onChange: (period: { month: number; year: number }) => void }) {
+  const years = Array.from({ length: 9 }, (_, index) => year - 4 + index);
+  const move = (step: number) => {
+    if (mode === "year") onChange({ month, year: year + step });
+    else {
+      const next = new Date(year, month + step, 1);
+      onChange({ month: next.getMonth(), year: next.getFullYear() });
+    }
+  };
+  return <div className="inline-flex items-center gap-1 rounded-md border border-[#d9d7cf] bg-white p-1.5 shadow-[0_1px_1px_rgba(24,48,68,.03)]"><button type="button" aria-label="Periode sebelumnya" onClick={() => move(-1)} className="grid h-8 w-8 place-items-center rounded hover:bg-[#f3f1eb]"><ChevronLeft size={15} /></button><CalendarDays size={16} className="ml-1 text-[#e76f36]" />{mode === "month" && <><label className="sr-only" htmlFor="project-period-month">Bulan project</label><select id="project-period-month" aria-label={`Periode aktif ${monthNames[month]} ${year}`} value={month} onChange={(event) => onChange({ month: Number(event.target.value), year })} className="h-8 bg-transparent px-1 text-xs font-bold text-[#314754] outline-none">{monthNames.map((name, index) => <option key={name} value={index}>{name}</option>)}</select><span className="h-5 w-px bg-[#dedbd3]" /></>}<label className="sr-only" htmlFor="project-period-year">Tahun project</label><select id="project-period-year" aria-label={`Tahun aktif ${year}`} value={year} onChange={(event) => onChange({ month, year: Number(event.target.value) })} className="h-8 bg-transparent px-1 text-xs font-bold text-[#314754] outline-none">{years.map((option) => <option key={option}>{option}</option>)}</select><button type="button" aria-label="Periode berikutnya" onClick={() => move(1)} className="grid h-8 w-8 place-items-center rounded hover:bg-[#f3f1eb]"><ChevronRight size={15} /></button></div>;
+}
+
+function ProjectTracker({ projects, setProjects, backendEnabled }: { projects: Project[]; setProjects: React.Dispatch<React.SetStateAction<Project[]>>; backendEnabled: boolean }) {
+  const [search, setSearch] = useState("");
+  const [period, setPeriod] = useState({ month: 7, year: 2026 });
+  const [periodMode, setPeriodMode] = useState<"month" | "year">("month");
+  const [periodLoading, setPeriodLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
+  const [picFilter, setPicFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [sortOrder, setSortOrder] = useState<"deadline" | "priority" | "title">("deadline");
+  const [adding, setAdding] = useState(false);
+  const [selected, setSelected] = useState<Project | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  useEffect(() => {
+    if (!backendEnabled) return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({ year: String(period.year) });
+    if (periodMode === "month") params.set("month", String(period.month + 1));
+    setPeriodLoading(true);
+    fetch(`/api/projects?${params.toString()}`, { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load project period")))
+      .then((payload: { data: ApiProject[] }) => setProjects(payload.data.map(fromApiProject)))
+      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) return; })
+      .finally(() => { if (!controller.signal.aborted) setPeriodLoading(false); });
+    return () => controller.abort();
+  }, [backendEnabled, period.month, period.year, periodMode, setProjects]);
+  const pics = Array.from(new Set(projects.map((project) => project.pic))).sort();
+  const categories = Array.from(new Set(projects.map((project) => project.category))).sort();
+  const priorityRank: Record<Priority, number> = { High: 0, Medium: 1, Low: 2 };
+  const filtered = projects.filter((project) => {
+    const periodIso = project.status === "Done" ? project.completedAtIso || project.deadlineIso : project.deadlineIso;
+    const periodDate = periodIso ? new Date(periodIso) : null;
+    const matchesPeriod = !!periodDate && periodDate.getFullYear() === period.year && (periodMode === "year" || periodDate.getMonth() === period.month);
+    const matchesSearch = `${project.title} ${project.pic} ${project.category}`.toLowerCase().includes(search.trim().toLowerCase());
+    const matchesStatus = statusFilter === "all" || project.status === statusFilter;
+    const matchesPic = picFilter === "all" || project.pic === picFilter;
+    const matchesCategory = categoryFilter === "all" || project.category === categoryFilter;
+    return matchesPeriod && matchesSearch && matchesStatus && matchesPic && matchesCategory;
+  }).sort((a, b) => {
+    if (sortOrder === "priority") return priorityRank[a.priority] - priorityRank[b.priority] || a.title.localeCompare(b.title, "id");
+    if (sortOrder === "title") return a.title.localeCompare(b.title, "id");
+    return new Date(a.deadlineIso || "9999-12-31").getTime() - new Date(b.deadlineIso || "9999-12-31").getTime();
+  });
+  const createProject = async (project: Project) => {
+    if (!backendEnabled) {
+      setProjects((current) => [project, ...current]);
+      return;
+    }
+    const response = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toProjectPayload(project)) });
+    if (!response.ok) return;
+    const payload = await response.json() as { data: ApiProject };
+    setProjects((current) => [fromApiProject(payload.data), ...current]);
+  };
+  const saveProject = async (project: Project) => {
+    if (!backendEnabled) {
+      setProjects((current) => current.map((item) => item.id === project.id ? project : item));
+      setSelected(project);
+      return;
+    }
+    const response = await fetch(`/api/projects/${project.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toProjectPayload(project)) });
+    if (!response.ok) return;
+    const payload = await response.json() as { data: ApiProject };
+    const saved = fromApiProject(payload.data);
+    setProjects((current) => current.map((item) => item.id === saved.id ? saved : item));
+    setSelected(saved);
+  };
+  const deleteProject = async (project: Project) => {
+    if (backendEnabled) {
+      const response = await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
+      if (!response.ok) return;
+    }
+    setProjects((current) => current.filter((item) => item.id !== project.id));
+    setDeleting(false);
+    setSelected(null);
+  };
+  const drop = (event: React.DragEvent, status: Status) => {
+    event.preventDefault();
+    const id = Number(event.dataTransfer.getData("projectId"));
+    if (!id) return;
+    const previous = projects.find((project) => project.id === id);
+    if (!previous || previous.status === status) return;
+    const changed = { ...previous, status, completedAtIso: status === "Done" ? previous.completedAtIso || new Date().toISOString() : undefined };
+    setProjects((current) => current.map((project) => project.id === id ? changed : project));
+    if (backendEnabled) void fetch(`/api/projects/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to update status")))
+      .then((payload: { data: ApiProject }) => setProjects((current) => current.map((project) => project.id === id ? fromApiProject(payload.data) : project)))
+      .catch(() => setProjects((current) => current.map((project) => project.id === id ? previous : project)));
+  };
+  return <div className="fade-up">
+    <SectionHeading eyebrow="Track" title="Project Tracker" description="Pantau seluruh alur kerja tim. Tarik kartu untuk memperbarui status project secara langsung." action={<Button onClick={() => setAdding(true)}><Plus size={17} /> Tambah project</Button>} />
+    <div className="mb-3 flex flex-wrap items-center gap-2"><div className="inline-flex rounded-md border border-[#d9d7cf] bg-white p-1"><button type="button" onClick={() => setPeriodMode("month")} className={cn("rounded px-3 py-1.5 text-xs font-bold", periodMode === "month" ? "bg-[#193246] text-white" : "text-[#667278] hover:bg-[#f3f1eb]")}>Bulanan</button><button type="button" onClick={() => setPeriodMode("year")} className={cn("rounded px-3 py-1.5 text-xs font-bold", periodMode === "year" ? "bg-[#193246] text-white" : "text-[#667278] hover:bg-[#f3f1eb]")}>Tahunan</button></div><MonthYearPicker month={period.month} year={period.year} mode={periodMode} onChange={setPeriod} /><Button type="button" size="sm" variant="outline" onClick={() => { const today = new Date(); setPeriod({ month: today.getMonth(), year: today.getFullYear() }); setPeriodMode("month"); }}>Hari ini</Button><span className="ml-auto text-[11px] text-[#8a9194]">{periodLoading ? "Memuat periode..." : periodMode === "month" ? `Board ${monthNames[period.month]} ${period.year}` : `Board tahun ${period.year}`}</span></div>
+    <div className="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center"><div className="relative min-w-64 max-w-md flex-1"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8f9699]" /><Input value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" placeholder="Cari project, PIC, atau kategori..." /></div><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><label className="sr-only" htmlFor="status-filter">Filter status</label><select id="status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as Status | "all")} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua status</option>{Object.keys(statusMeta).map((status) => <option key={status} value={status}>{status}</option>)}</select><label className="sr-only" htmlFor="pic-filter">Filter PIC</label><select id="pic-filter" value={picFilter} onChange={(e) => setPicFilter(e.target.value)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua PIC</option>{pics.map((pic) => <option key={pic} value={pic}>{pic}</option>)}</select><label className="sr-only" htmlFor="category-filter">Filter kategori</label><select id="category-filter" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua kategori</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select><label className="sr-only" htmlFor="sort-projects">Urutkan project</label><select id="sort-projects" value={sortOrder} onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="deadline">Deadline terdekat</option><option value="priority">Prioritas tertinggi</option><option value="title">Nama A–Z</option></select></div><div className="xl:ml-auto text-xs text-[#7d8589]"><b className="text-[#183044]">{filtered.length}</b> project ditampilkan</div></div>
+    <div className="thin-scrollbar -mx-5 overflow-x-auto px-5 pb-4 md:-mx-8 md:px-8"><div className="grid min-w-[1240px] grid-cols-5 gap-3">
+      {(Object.keys(statusMeta) as Status[]).map((status) => { const list = filtered.filter((p) => p.status === status); return <section key={status} onDragOver={(e) => e.preventDefault()} onDrop={(e) => drop(e, status)} className="min-h-[580px] bg-[#eeece6] p-2.5"><div className="mb-3 flex items-center px-1 py-1"><i className={cn("mr-2 h-2.5 w-2.5 rounded-full", statusMeta[status].dot)} /><h2 className="text-xs font-bold uppercase tracking-[0.1em]">{status}</h2><span className="ml-auto rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#7e878b]">{list.length}</span></div><div className="space-y-2.5">{list.map((p) => <ProjectCard key={p.id} project={p} onClick={() => setSelected(p)} />)}{list.length === 0 && <div className="grid h-24 place-items-center border border-dashed border-[#cbc7bd] text-xs text-[#9a9c9a]">Tarik project ke sini</div>}</div></section>; })}
+    </div></div>
+    <AddProjectDialog open={adding} onOpenChange={setAdding} onAdd={(project) => { void createProject(project); }} />
+    <ProjectDetail project={selected} open={!!selected && !editing && !deleting} onOpenChange={(v) => !v && setSelected(null)} onEdit={() => setEditing(true)} onDelete={() => setDeleting(true)} />
+    <EditProjectDialog project={selected} open={editing} onOpenChange={setEditing} onSave={(project) => { void saveProject(project); }} />
+    <DeleteProjectDialog project={selected} open={deleting} onOpenChange={setDeleting} onConfirm={() => { if (selected) void deleteProject(selected); }} />
+  </div>;
+}
+
+type AgendaItem = { id: number; title: string; pic: string; category: string; startTime: string; endTime: string; note: string; projectId?: number | null };
+type CalendarEvent = { label: string; type: "deadline" | "meeting" | "publish"; agendaId?: number };
+
+const initialAgendas: AgendaItem[] = [
+  { id: 1, title: "FGD Komunitas Urban", pic: "Nadia Putri", category: "Meeting", startTime: "2026-08-26T13:00:00+07:00", endTime: "2026-08-26T15:00:00+07:00", note: "Sesi diskusi bersama responden utama.", projectId: 5 },
+  { id: 2, title: "Sync editorial mingguan", pic: "Tim riset", category: "Meeting", startTime: "2026-08-26T16:30:00+07:00", endTime: "2026-08-26T17:00:00+07:00", note: "Sinkronisasi progres dan kebutuhan publikasi." },
+  { id: 3, title: "Review laporan Gen Z", pic: "Dita Anjani", category: "Review", startTime: "2026-08-27T10:00:00+07:00", endTime: "2026-08-27T11:00:00+07:00", note: "Review executive summary bersama lead.", projectId: 8 },
+  { id: 4, title: "Publikasi insight bulanan", pic: "Maya Kirana", category: "Publikasi", startTime: "2026-09-06T09:00:00+07:00", endTime: "2026-09-06T10:00:00+07:00", note: "Publikasi rangkuman insight bulanan." },
+];
+
+function AgendaDialog({ open, agenda, projects, onOpenChange, onSave, onDelete }: { open: boolean; agenda: AgendaItem | null; projects: Project[]; onOpenChange: (value: boolean) => void; onSave: (agenda: AgendaItem) => void; onDelete: (id: number) => void }) {
+  const [title, setTitle] = useState("");
+  const [pic, setPic] = useState("Nadia Putri");
+  const [category, setCategory] = useState("Meeting");
+  const [startTime, setStartTime] = useState("2026-08-27T09:00");
+  const [endTime, setEndTime] = useState("2026-08-27T10:00");
+  const [projectId, setProjectId] = useState("");
+  const [note, setNote] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    setTitle(agenda?.title || ""); setPic(agenda?.pic || "Nadia Putri"); setCategory(agenda?.category || "Meeting");
+    setStartTime(agenda?.startTime.slice(0, 16) || "2026-08-27T09:00"); setEndTime(agenda?.endTime.slice(0, 16) || "2026-08-27T10:00");
+    setProjectId(agenda?.projectId ? String(agenda.projectId) : ""); setNote(agenda?.note || "");
+  }, [agenda, open]);
+  const submit = () => {
+    if (!title.trim() || !startTime || !endTime || new Date(endTime) < new Date(startTime)) return;
+    onSave({ id: agenda?.id || Date.now(), title: title.trim(), pic, category, startTime: new Date(startTime).toISOString(), endTime: new Date(endTime).toISOString(), note: note.trim(), projectId: projectId ? Number(projectId) : null });
+    onOpenChange(false);
+  };
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>{agenda ? "Edit agenda" : "Tambah agenda"}</DialogTitle><DialogDescription>Atur meeting, publikasi, atau jadwal pekerjaan tim.</DialogDescription></DialogHeader><div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1 thin-scrollbar"><label className="block text-xs font-bold text-[#59656c]">Nama agenda<Input className="mt-2" value={title} onChange={(event) => setTitle(event.target.value)} autoFocus /></label><div className="grid gap-4 sm:grid-cols-2"><label className="text-xs font-bold text-[#59656c]">Mulai<Input type="datetime-local" className="mt-2 font-normal" value={startTime} onChange={(event) => setStartTime(event.target.value)} /></label><label className="text-xs font-bold text-[#59656c]">Selesai<Input type="datetime-local" className="mt-2 font-normal" value={endTime} onChange={(event) => setEndTime(event.target.value)} /></label><label className="text-xs font-bold text-[#59656c]">PIC<Input className="mt-2 font-normal" value={pic} onChange={(event) => setPic(event.target.value)} /></label><label className="text-xs font-bold text-[#59656c]">Kategori<select className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal" value={category} onChange={(event) => setCategory(event.target.value)}><option>Meeting</option><option>Review</option><option>Publikasi</option><option>Schedule</option></select></label></div><label className="block text-xs font-bold text-[#59656c]">Project terkait<select className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal" value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">Tidak terkait project</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}</select></label><label className="block text-xs font-bold text-[#59656c]">Catatan<textarea className="mt-2 min-h-20 w-full resize-none rounded-md border border-[#d9d7cf] bg-white p-3 text-sm" value={note} onChange={(event) => setNote(event.target.value)} /></label><div className="flex items-center gap-2">{agenda && <Button variant="outline" className="mr-auto border-[#e2b9b5] text-[#b9433d] hover:bg-[#f9e8e5]" onClick={() => { onDelete(agenda.id); onOpenChange(false); }}><Trash2 size={15} /> Hapus</Button>}<Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button><Button onClick={submit} disabled={!title.trim() || !startTime || !endTime || new Date(endTime) < new Date(startTime)}><Check size={16} />{agenda ? "Simpan perubahan" : "Tambah agenda"}</Button></div></div></DialogContent></Dialog>;
+}
+
+function CalendarPlanner({ projects, backendEnabled }: { projects: Project[]; backendEnabled: boolean }) {
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [selectedDay, setSelectedDay] = useState(26);
+  const [agendaRows, setAgendaRows] = useState<AgendaItem[]>(initialAgendas);
+  const [agendaOpen, setAgendaOpen] = useState(false);
+  const [selectedAgenda, setSelectedAgenda] = useState<AgendaItem | null>(null);
+  useEffect(() => {
+    if (!backendEnabled) return;
+    fetch("/api/agendas").then((response) => response.ok ? response.json() : Promise.reject()).then((payload: { data: AgendaItem[] }) => setAgendaRows(payload.data)).catch(() => undefined);
+  }, [backendEnabled]);
+  const saveAgenda = async (agenda: AgendaItem) => {
+    if (!backendEnabled) {
+      setAgendaRows((current) => current.some((item) => item.id === agenda.id) ? current.map((item) => item.id === agenda.id ? agenda : item) : [...current, agenda]);
+      return;
+    }
+    const editing = selectedAgenda !== null;
+    const response = await fetch(editing ? `/api/agendas/${selectedAgenda.id}` : "/api/agendas", {
+      method: editing ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: agenda.title, pic: agenda.pic, category: agenda.category, startTime: agenda.startTime, endTime: agenda.endTime, note: agenda.note, projectId: agenda.projectId ?? null }),
+    });
+    if (!response.ok) return;
+    const payload = await response.json() as { data: AgendaItem };
+    setAgendaRows((current) => current.some((item) => item.id === payload.data.id) ? current.map((item) => item.id === payload.data.id ? payload.data : item) : [...current, payload.data]);
+    setSelectedAgenda(payload.data);
+  };
+  const deleteAgenda = async (id: number) => {
+    if (backendEnabled) {
+      const response = await fetch(`/api/agendas/${id}`, { method: "DELETE" });
+      if (!response.ok) return;
+    }
+    setAgendaRows((current) => current.filter((agenda) => agenda.id !== id));
+    setSelectedAgenda(null);
+  };
+  const label = monthOffset === 0 ? "Agustus 2026" : monthOffset === 1 ? "September 2026" : "Juli 2026";
+  const startPad = monthOffset === 0 ? 5 : monthOffset === 1 ? 1 : 2;
+  const days = monthOffset === 0 ? 31 : monthOffset === 1 ? 30 : 31;
+  useEffect(() => { if (selectedDay > days) setSelectedDay(days); }, [days, selectedDay]);
+  const visibleMonth = 7 + monthOffset;
+  const eventsByDay: Record<number, CalendarEvent[]> = {};
+  const addEvent = (date: Date, event: CalendarEvent) => {
+    if (date.getFullYear() !== 2026 || date.getMonth() !== visibleMonth) return;
+    (eventsByDay[date.getDate()] ||= []).push(event);
+  };
+  projects.forEach((project) => { if (project.deadlineIso) addEvent(new Date(project.deadlineIso), { label: project.title, type: "deadline" }); });
+  agendaRows.forEach((agenda) => addEvent(new Date(agenda.startTime), { label: agenda.title, type: agenda.category.toLowerCase().includes("publikasi") ? "publish" : "meeting", agendaId: agenda.id }));
+  const selectedDate = new Date(2026, visibleMonth, selectedDay);
+  const selectedAgendas = agendaRows.filter((agenda) => new Date(agenda.startTime).getFullYear() === 2026 && new Date(agenda.startTime).getMonth() === visibleMonth && new Date(agenda.startTime).getDate() === selectedDay);
+  const selectedDateLabel = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long" }).format(selectedDate);
+  const selectedWeekday = new Intl.DateTimeFormat("id-ID", { weekday: "long" }).format(selectedDate);
+  return <div className="fade-up"><SectionHeading eyebrow="Schedule" title="Calendar Planner" description="Satukan deadline project, agenda meeting, dan jadwal publikasi dalam satu kalender." action={<Button onClick={() => { setSelectedAgenda(null); setAgendaOpen(true); }}><Plus size={17} /> Tambah agenda</Button>} />
+    <div className="grid gap-6 xl:grid-cols-[1fr_290px]"><section className="bg-white p-4 md:p-6"><div className="mb-5 flex items-center justify-between"><div className="flex items-center gap-2"><button onClick={() => setMonthOffset(Math.max(-1, monthOffset - 1))} className="grid h-8 w-8 place-items-center rounded-md border border-[#dedbd3] hover:bg-[#f5f3ed]"><ChevronLeft size={16} /></button><button onClick={() => setMonthOffset(Math.min(1, monthOffset + 1))} className="grid h-8 w-8 place-items-center rounded-md border border-[#dedbd3] hover:bg-[#f5f3ed]"><ChevronRight size={16} /></button><h2 className="ml-2 font-serif text-xl font-semibold">{label}</h2></div><Button size="sm" variant="outline" onClick={() => { setMonthOffset(0); setSelectedDay(26); }}>Hari ini</Button></div><div className="grid grid-cols-7 border-l border-t border-[#e2dfd7]">{["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"].map((d) => <div key={d} className="border-b border-r border-[#e2dfd7] py-2 text-center text-[10px] font-bold uppercase tracking-widest text-[#8c9295]">{d}</div>)}{Array.from({ length: startPad }).map((_, i) => <div key={`p-${i}`} className="min-h-24 border-b border-r border-[#e2dfd7] bg-[#f8f7f3] md:min-h-28" />)}{Array.from({ length: days }).map((_, i) => { const day = i + 1; const dayEvents = eventsByDay[day] || []; const today = monthOffset === 0 && day === 26; const chosen = selectedDay === day; return <div key={day} className={cn("min-h-24 border-b border-r border-[#e2dfd7] p-1.5 md:min-h-28 md:p-2", today && "bg-[#fff8f4]")}><button aria-label={`Lihat agenda ${day} ${label}`} onClick={() => setSelectedDay(day)} className={cn("mb-1 grid h-6 w-6 place-items-center text-xs hover:bg-[#f0eee8]", chosen && "rounded-full bg-[#e76f36] font-bold text-white hover:bg-[#cf5d27]")}>{day}</button><div className="space-y-1">{dayEvents.slice(0, 2).map((event, index) => <button key={`${event.label}-${index}`} onClick={() => { setSelectedDay(day); if (!event.agendaId) return; setSelectedAgenda(agendaRows.find((agenda) => agenda.id === event.agendaId) || null); setAgendaOpen(true); }} className={cn("block w-full truncate border-l-2 px-1.5 py-1 text-left text-[9px] font-semibold md:text-[10px]", event.type === "deadline" ? "cursor-default border-[#d8564e] bg-[#f9e8e5] text-[#a43d37]" : event.type === "publish" ? "border-[#4f826c] bg-[#e5efe9] text-[#3f6f5b]" : "border-[#3578a8] bg-[#e6f0f7] text-[#28658f]")}>{event.label}</button>)}</div></div>; })}</div></section>
+    <aside className="space-y-4"><div className="bg-[#193246] p-5 text-white"><div className="text-[10px] font-bold uppercase tracking-[.18em] text-[#e9a17d]">Agenda tanggal</div><div className="mt-2 font-serif text-3xl font-semibold">{selectedDateLabel}</div><div className="mt-1 capitalize text-xs text-[#a9b7c0]">{selectedWeekday} · {selectedAgendas.length} agenda</div><div className="mt-6 space-y-4">{selectedAgendas.map((agenda) => <button key={agenda.id} onClick={() => { setSelectedAgenda(agenda); setAgendaOpen(true); }} className="block w-full border-l-2 border-[#6e9bc0] pl-3 text-left"><div className="text-sm font-semibold">{agenda.title}</div><div className="mt-1 text-[11px] text-[#a9b7c0]">{new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(agenda.startTime)).replace(":", ".")} · {agenda.pic}</div></button>)}{selectedAgendas.length === 0 && <p className="text-xs leading-5 text-[#a9b7c0]">Belum ada agenda pada tanggal ini.</p>}</div></div><div className="bg-white p-5"><h3 className="text-sm font-bold">Keterangan</h3><div className="mt-4 space-y-3 text-xs text-[#657177]"><div className="flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-full bg-[#d8564e]" />Deadline project</div><div className="flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-full bg-[#3578a8]" />Meeting / agenda</div><div className="flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-full bg-[#4f826c]" />Jadwal publikasi</div></div></div></aside></div>
+    <AgendaDialog open={agendaOpen} agenda={selectedAgenda} projects={projects} onOpenChange={setAgendaOpen} onSave={(agenda) => { void saveAgenda(agenda); }} onDelete={(id) => { void deleteAgenda(id); }} />
+  </div>;
+}
+
+type AssetRecord = {
+  id: number;
+  title: string;
+  category: string;
+  pic: string;
+  i: string;
+  date: string;
+  dateIso: string;
+  tags: string[];
+  desc: string;
+  link?: string | null;
+  documentLink?: string | null;
+};
+
+const initialAssets: AssetRecord[] = [
+  { id: 1, title: "Analisis Kompetitor Fintech", category: "Competitor Research", pic: "Fikri Ramadhan", i: "FR", date: "19 Agu 2026", dateIso: "2026-08-19", tags: ["fintech", "market", "benchmark"], desc: "Pemetaan positioning dan komunikasi tujuh pemain fintech nasional.", link: "https://drive.google.com/", documentLink: "https://docs.google.com/" },
+  { id: 2, title: "Profil Audiens Podcast", category: "Audience Research", pic: "Maya Kirana", i: "MK", date: "16 Agu 2026", dateIso: "2026-08-16", tags: ["podcast", "audience", "survey"], desc: "Profil demografis, motivasi dengar, dan kebiasaan konsumsi audiens.", link: "https://docs.google.com/" },
+  { id: 3, title: "Landscape Sustainability", category: "Desk Research", pic: "Arga Wibawa", i: "AW", date: "08 Agu 2026", dateIso: "2026-08-08", tags: ["ESG", "sustainability"], desc: "Ringkasan isu dan percakapan keberlanjutan di sektor FMCG.", link: "https://www.canva.com/" },
+  { id: 4, title: "Persepsi Layanan Publik", category: "Brand Research", pic: "Nadia Putri", i: "NP", date: "31 Jul 2026", dateIso: "2026-07-31", tags: ["public", "perception"], desc: "Studi persepsi masyarakat pada layanan digital pemerintahan.", link: "https://drive.google.com/" },
+  { id: 5, title: "Media Mapping Teknologi", category: "Media Mapping", pic: "Dita Anjani", i: "DA", date: "25 Jul 2026", dateIso: "2026-07-25", tags: ["media", "technology"], desc: "Database media dan jurnalis teknologi prioritas 2026.", link: "https://docs.google.com/" },
+  { id: 6, title: "Retail Trend Snapshot", category: "Trend Report", pic: "Fikri Ramadhan", i: "FR", date: "18 Jul 2026", dateIso: "2026-07-18", tags: ["retail", "trend", "consumer"], desc: "Snapshot perubahan perilaku belanja dan kanal retail utama.", link: "https://www.canva.com/" },
+];
+
+type ApiAsset = { id: number; projectName: string; category: string; pic: string; picInitials: string; completedDate: string; tags: string[]; description: string; assetLink: string | null; docLink: string | null };
+
+function fromApiAsset(asset: ApiAsset): AssetRecord {
+  return {
+    id: asset.id,
+    title: asset.projectName,
+    category: asset.category,
+    pic: asset.pic,
+    i: asset.picInitials,
+    date: new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(asset.completedDate)).replace(".", ""),
+    dateIso: asset.completedDate.slice(0, 10),
+    tags: asset.tags,
+    desc: asset.description,
+    link: asset.assetLink,
+    documentLink: asset.docLink,
+  };
+}
+
+function AssetDialog({ open, asset, onOpenChange, onSave, onDelete }: { open: boolean; asset: AssetRecord | null; onOpenChange: (value: boolean) => void; onSave: (asset: AssetRecord) => void; onDelete: (id: number) => void }) {
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState("");
+  const [pic, setPic] = useState("");
+  const [dateIso, setDateIso] = useState("2026-08-27");
+  const [tags, setTags] = useState("");
+  const [desc, setDesc] = useState("");
+  const [link, setLink] = useState("");
+  const [documentLink, setDocumentLink] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    setTitle(asset?.title || ""); setCategory(asset?.category || ""); setPic(asset?.pic || ""); setDateIso(asset?.dateIso || "2026-08-27");
+    setTags(asset?.tags.join(", ") || ""); setDesc(asset?.desc || ""); setLink(asset?.link || ""); setDocumentLink(asset?.documentLink || "");
+  }, [asset, open]);
+  const save = () => {
+    const cleanTags = tags.split(",").map((tag) => tag.trim()).filter(Boolean);
+    const initials = pic.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+    const date = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${dateIso}T12:00:00+07:00`)).replace(".", "");
+    onSave({ id: asset?.id || Date.now(), title: title.trim(), category: category.trim(), pic: pic.trim(), i: initials, date, dateIso, tags: cleanTags, desc: desc.trim(), link: link.trim() || null, documentLink: documentLink.trim() || null });
+    onOpenChange(false);
+  };
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>{asset ? "Edit aset" : "Tambah aset"}</DialogTitle><DialogDescription>Simpan hasil project beserta tautan kerja agar mudah ditemukan kembali.</DialogDescription></DialogHeader><div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1 thin-scrollbar"><label className="block text-xs font-bold text-[#59656c]">Nama project<Input className="mt-2" value={title} onChange={(event) => setTitle(event.target.value)} autoFocus /></label><div className="grid gap-4 sm:grid-cols-2"><label className="text-xs font-bold text-[#59656c]">Kategori<Input className="mt-2 font-normal" value={category} onChange={(event) => setCategory(event.target.value)} /></label><label className="text-xs font-bold text-[#59656c]">PIC<Input className="mt-2 font-normal" value={pic} onChange={(event) => setPic(event.target.value)} /></label><label className="text-xs font-bold text-[#59656c]">Tanggal selesai<Input type="date" className="mt-2 font-normal" value={dateIso} onChange={(event) => setDateIso(event.target.value)} /></label><label className="text-xs font-bold text-[#59656c]">Tag<Input className="mt-2 font-normal" value={tags} onChange={(event) => setTags(event.target.value)} placeholder="riset, laporan, 2026" /></label></div><label className="block text-xs font-bold text-[#59656c]">Link aset<Input type="url" className="mt-2 font-normal" value={link} onChange={(event) => setLink(event.target.value)} placeholder="https://drive.google.com/..." /></label><label className="block text-xs font-bold text-[#59656c]">Link dokumen<Input type="url" className="mt-2 font-normal" value={documentLink} onChange={(event) => setDocumentLink(event.target.value)} placeholder="https://docs.google.com/..." /></label><label className="block text-xs font-bold text-[#59656c]">Deskripsi<textarea className="mt-2 min-h-24 w-full resize-none rounded-md border border-[#d9d7cf] bg-white p-3 text-sm" value={desc} onChange={(event) => setDesc(event.target.value)} /></label><div className="flex items-center gap-2">{asset && <Button variant="outline" className="mr-auto border-[#e2b9b5] text-[#b9433d] hover:bg-[#f9e8e5]" onClick={() => { onDelete(asset.id); onOpenChange(false); }}><Trash2 size={15} /> Hapus</Button>}<Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button><Button onClick={save} disabled={!title.trim() || !category.trim() || !pic.trim() || !dateIso}><Check size={16} />{asset ? "Simpan perubahan" : "Tambah aset"}</Button></div></div></DialogContent></Dialog>;
+}
+
+function AssetLibrary({ backendEnabled }: { backendEnabled: boolean }) {
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("Semua kategori");
+  const [picFilter, setPicFilter] = useState("Semua PIC");
+  const [tagFilter, setTagFilter] = useState("Semua tag");
+  const [records, setRecords] = useState<AssetRecord[]>(initialAssets);
+  const [selectedAsset, setSelectedAsset] = useState<AssetRecord | null>(null);
+  const [assetOpen, setAssetOpen] = useState(false);
+  useEffect(() => {
+    if (!backendEnabled) return;
+    fetch("/api/assets").then((response) => response.ok ? response.json() : Promise.reject()).then((payload: { data: ApiAsset[] }) => setRecords(payload.data.map(fromApiAsset))).catch(() => undefined);
+  }, [backendEnabled]);
+  const saveAsset = async (asset: AssetRecord) => {
+    if (!backendEnabled) {
+      setRecords((current) => current.some((item) => item.id === asset.id) ? current.map((item) => item.id === asset.id ? asset : item) : [asset, ...current]);
+      return;
+    }
+    const editing = selectedAsset !== null;
+    const response = await fetch(editing ? `/api/assets/${selectedAsset.id}` : "/api/assets", {
+      method: editing ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectName: asset.title, category: asset.category, pic: asset.pic, picInitials: asset.i, completedDate: `${asset.dateIso}T12:00:00+07:00`, description: asset.desc, assetLink: asset.link || null, docLink: asset.documentLink || null, tags: asset.tags }),
+    });
+    if (!response.ok) return;
+    const payload = await response.json() as { data: ApiAsset };
+    const saved = fromApiAsset(payload.data);
+    setRecords((current) => current.some((item) => item.id === saved.id) ? current.map((item) => item.id === saved.id ? saved : item) : [saved, ...current]);
+    setSelectedAsset(saved);
+  };
+  const deleteAsset = async (id: number) => {
+    if (backendEnabled) {
+      const response = await fetch(`/api/assets/${id}`, { method: "DELETE" });
+      if (!response.ok) return;
+    }
+    setRecords((current) => current.filter((asset) => asset.id !== id));
+    setSelectedAsset(null);
+  };
+  const categories = ["Semua kategori", ...Array.from(new Set(records.map((asset) => asset.category)))];
+  const pics = ["Semua PIC", ...Array.from(new Set(records.map((asset) => asset.pic)))];
+  const tags = ["Semua tag", ...Array.from(new Set(records.flatMap((asset) => asset.tags)))];
+  const query = search.trim().toLowerCase();
+  const filtered = records.filter((asset) => {
+    const matchesSearch = `${asset.title} ${asset.category} ${asset.pic} ${asset.tags.join(" ")} ${asset.desc}`.toLowerCase().includes(query);
+    const matchesCategory = category === "Semua kategori" || asset.category === category;
+    const matchesPic = picFilter === "Semua PIC" || asset.pic === picFilter;
+    const matchesTag = tagFilter === "Semua tag" || asset.tags.includes(tagFilter);
+    return matchesSearch && matchesCategory && matchesPic && matchesTag;
+  });
+  return <div className="fade-up"><SectionHeading eyebrow="Archive" title="Asset & Library" description="Temukan kembali output, working document, dan pengetahuan dari project yang telah selesai." action={<Button onClick={() => { setSelectedAsset(null); setAssetOpen(true); }}><Plus size={17} /> Tambah aset</Button>} />
+    <div className="mb-6 flex flex-col flex-wrap gap-3 sm:flex-row"><div className="relative min-w-56 max-w-md flex-1"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8f9699]" /><Input value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" placeholder="Cari asset, tag, PIC..." /></div><label className="relative flex h-10 items-center rounded-md border border-[#d9d7cf] bg-white px-3 text-sm"><Filter size={15} className="mr-2 text-[#727b80]" /><select aria-label="Filter kategori aset" value={category} onChange={(event) => setCategory(event.target.value)} className="appearance-none bg-transparent pr-6 outline-none">{categories.map((option) => <option key={option}>{option}</option>)}</select><ChevronDown size={13} className="pointer-events-none absolute right-3 text-[#727b80]" /></label><label className="relative flex h-10 items-center rounded-md border border-[#d9d7cf] bg-white px-3 text-sm"><Users size={15} className="mr-2 text-[#727b80]" /><select aria-label="Filter PIC aset" value={picFilter} onChange={(event) => setPicFilter(event.target.value)} className="appearance-none bg-transparent pr-6 outline-none">{pics.map((option) => <option key={option}>{option}</option>)}</select><ChevronDown size={13} className="pointer-events-none absolute right-3 text-[#727b80]" /></label><label className="relative flex h-10 items-center rounded-md border border-[#d9d7cf] bg-white px-3 text-sm"><select aria-label="Filter tag aset" value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} className="appearance-none bg-transparent pr-6 outline-none">{tags.map((option) => <option key={option}>{option === "Semua tag" ? option : `#${option}`}</option>)}</select><ChevronDown size={13} className="pointer-events-none absolute right-3 text-[#727b80]" /></label><div className="flex items-center gap-2 text-xs text-[#7d8589] sm:ml-auto"><Archive size={14} /> {filtered.length} arsip</div></div>
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{filtered.map((asset, index) => <article key={asset.id} onClick={() => { setSelectedAsset(asset); setAssetOpen(true); }} className="group flex min-h-[260px] cursor-pointer flex-col border border-[#dfdcd3] bg-white p-5 transition hover:border-[#bfbab0] hover:shadow-[0_8px_24px_rgba(24,48,68,.07)]"><div className="flex items-start justify-between"><span className="grid h-10 w-10 place-items-center rounded-md bg-[#edf1ee] text-[#4f826c]"><FileText size={19} /></span><span className="font-serif text-sm italic text-[#9ca1a3]">{String(index + 1).padStart(2, "0")}</span></div><div className="mt-5 text-[10px] font-bold uppercase tracking-[.15em] text-[#e76f36]">{asset.category}</div><h2 className="mt-2 font-serif text-xl font-semibold leading-snug group-hover:text-[#cf5d27]">{asset.title}</h2><p className="mt-2 line-clamp-2 text-xs leading-5 text-[#6f787d]">{asset.desc}</p><div className="mt-3 flex flex-wrap gap-1.5">{asset.tags.map((tag) => <Badge key={tag} className="bg-[#f0eee8] font-medium text-[#697278]">#{tag}</Badge>)}</div><div className="mt-auto flex items-end justify-between border-t border-[#ece9e2] pt-4"><div className="flex items-center gap-2"><MiniAvatar initials={asset.i} /><div><div className="text-[11px] font-semibold">{asset.pic}</div><div className="text-[10px] text-[#959b9e]">{asset.date}</div></div></div><div className="flex items-center gap-1"><Button size="sm" variant="ghost" onClick={(event) => { event.stopPropagation(); setSelectedAsset(asset); setAssetOpen(true); }}>Edit</Button><Button size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); const url = asset.link || asset.documentLink; if (url) window.open(url, "_blank", "noopener,noreferrer"); }} disabled={!asset.link && !asset.documentLink}>Open Asset <ExternalLink size={13} /></Button></div></div></article>)}</div>
+    {filtered.length === 0 && <div className="grid min-h-64 place-items-center border border-dashed border-[#d8d4ca] bg-white px-6 text-center"><div><Archive className="mx-auto text-[#a3aaad]" size={30} /><h2 className="mt-4 font-serif text-xl font-semibold">Arsip tidak ditemukan</h2><p className="mt-2 text-sm text-[#747d81]">Coba kata kunci lain atau reset filter yang sedang aktif.</p><Button variant="outline" className="mt-4" onClick={() => { setSearch(""); setCategory("Semua kategori"); setPicFilter("Semua PIC"); setTagFilter("Semua tag"); }}>Reset pencarian & filter</Button></div></div>}
+    <AssetDialog open={assetOpen} asset={selectedAsset} onOpenChange={setAssetOpen} onSave={(asset) => { void saveAsset(asset); }} onDelete={(id) => { void deleteAsset(id); }} />
+  </div>;
+}
+
+function activityTimeLabel(date: Date, now = new Date()) {
+  const elapsedSeconds = Math.max(0, Math.floor((now.getTime() - date.getTime()) / 1000));
+  if (elapsedSeconds < 60) return "Baru saja";
+  if (elapsedSeconds < 60 * 60) return `${Math.floor(elapsedSeconds / 60)} menit lalu`;
+  if (elapsedSeconds < 24 * 60 * 60) return `${Math.floor(elapsedSeconds / 3600)} jam lalu`;
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  const clock = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", hour12: false }).format(date).replace(":", ".");
+  if (date.toDateString() === yesterday.toDateString()) return `Kemarin, ${clock}`;
+  const calendarDate = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short" }).format(date).replace(".", "");
+  return `${calendarDate}, ${clock}`;
+}
+
+function ActivityHistory() {
+  const [search, setSearch] = useState("");
+  const [userFilter, setUserFilter] = useState("all");
+  const [projectFilter, setProjectFilter] = useState("all");
+  const [logs, setLogs] = useState([
+    { day: "Hari ini", time: "12 menit lalu", user: "Nadia Putri", i: "NP", action: "memindahkan project", target: "FGD Komunitas Urban", detail: "On Going → Delay", type: "status" },
+    { day: "Hari ini", time: "48 menit lalu", user: "Dita Anjani", i: "DA", action: "menambahkan catatan revisi pada", target: "Laporan Tren Gen Z", detail: "Executive summary perlu dipadatkan", type: "note" },
+    { day: "Hari ini", time: "3 jam lalu", user: "Arga Wibawa", i: "AW", action: "mengubah deadline", target: "Benchmark Industri Energi", detail: "08 Sep → 10 Sep", type: "date" },
+    { day: "Kemarin", time: "Kemarin, 16.24", user: "Fikri Ramadhan", i: "FR", action: "menyelesaikan project", target: "Analisis Kompetitor Fintech", detail: "Dipindahkan ke Asset & Library", type: "done" },
+    { day: "Kemarin", time: "Kemarin, 14.03", user: "Maya Kirana", i: "MK", action: "menambahkan agenda", target: "Town hall riset", detail: "31 Agu, 15.00", type: "date" },
+    { day: "25 Agustus", time: "25 Agu, 10.15", user: "Nadia Putri", i: "NP", action: "mengubah PIC", target: "Riset Persepsi Publik Q3", detail: "Angga → Nadia", type: "user" },
+  ]);
+  useEffect(() => {
+    fetch("/api/activity?limit=50")
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((payload: { data: Array<{ actorName: string; actorInitials: string; action: string; details: string; projectTitle: string | null; createdAt: string }> }) => {
+        const today = new Date();
+        const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+        setLogs(payload.data.map((log) => {
+          const date = new Date(log.createdAt);
+          const day = date.toDateString() === today.toDateString() ? "Hari ini" : date.toDateString() === yesterday.toDateString() ? "Kemarin" : new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "long" }).format(date);
+          return {
+            day,
+            time: activityTimeLabel(date, today),
+            user: log.actorName,
+            i: log.actorInitials,
+            action: log.action,
+            target: log.projectTitle || log.details,
+            detail: log.projectTitle ? log.details : "Aktivitas workspace",
+            type: log.action.includes("agenda") || log.action.includes("deadline") ? "date" : log.action.includes("selesai") ? "done" : log.action.includes("catatan") ? "note" : "status",
+          };
+        }));
+      })
+      .catch(() => undefined);
+  }, []);
+  const iconFor = (type: string) => type === "date" ? CalendarDays : type === "done" ? Check : type === "user" ? Users : type === "note" ? FileText : Activity;
+  const users = Array.from(new Set(logs.map((log) => log.user))).sort((a, b) => a.localeCompare(b, "id"));
+  const projects = Array.from(new Set(logs.map((log) => log.target))).sort((a, b) => a.localeCompare(b, "id"));
+  const query = search.trim().toLowerCase();
+  const filteredLogs = logs.filter((log) => {
+    const matchesSearch = `${log.user} ${log.action} ${log.target} ${log.detail}`.toLowerCase().includes(query);
+    const matchesUser = userFilter === "all" || log.user === userFilter;
+    const matchesProject = projectFilter === "all" || log.target === projectFilter;
+    return matchesSearch && matchesUser && matchesProject;
+  });
+  const hasFilters = !!query || userFilter !== "all" || projectFilter !== "all";
+  const resetFilters = () => { setSearch(""); setUserFilter("all"); setProjectFilter("all"); };
+  return <div className="fade-up"><SectionHeading eyebrow="History" title="Activity History" description="Jejak perubahan workspace agar semua keputusan dan progres tetap transparan." />
+    <div className="mb-6 flex flex-col gap-3 lg:flex-row"><div className="relative min-w-60 max-w-md flex-1"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8f9699]" /><Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Cari aktivitas atau project..." /></div><label className="relative flex h-10 min-w-48 items-center rounded-md border border-[#d9d7cf] bg-white px-3 text-sm"><Users size={15} className="mr-2 text-[#727b80]" /><select aria-label="Filter pengguna aktivitas" value={userFilter} onChange={(event) => setUserFilter(event.target.value)} className="w-full appearance-none bg-transparent pr-6 outline-none"><option value="all">Semua anggota</option>{users.map((user) => <option key={user} value={user}>{user}</option>)}</select><ChevronDown size={13} className="pointer-events-none absolute right-3 text-[#727b80]" /></label><label className="relative flex h-10 min-w-52 items-center rounded-md border border-[#d9d7cf] bg-white px-3 text-sm"><FolderOpen size={15} className="mr-2 text-[#727b80]" /><select aria-label="Filter project aktivitas" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} className="w-full appearance-none bg-transparent pr-6 outline-none"><option value="all">Semua project</option>{projects.map((project) => <option key={project} value={project}>{project}</option>)}</select><ChevronDown size={13} className="pointer-events-none absolute right-3 text-[#727b80]" /></label>{hasFilters && <Button variant="ghost" onClick={resetFilters}><X size={15} /> Reset</Button>}</div>
+    <section className="bg-white px-5 py-2 md:px-7">{filteredLogs.map((log, i) => { const Icon = iconFor(log.type); const showDay = i === 0 || filteredLogs[i - 1].day !== log.day; return <div key={`${log.time}-${log.target}`}>{showDay && <div className="border-b border-[#e7e4dc] pb-2 pt-5 text-[10px] font-bold uppercase tracking-[.18em] text-[#8b9295]">{log.day}</div>}<div className="grid grid-cols-[42px_1fr] gap-3 py-4 md:grid-cols-[90px_42px_1fr_auto] md:items-center"><div className="hidden text-xs text-[#8d9497] md:block">{log.time}</div><div className="relative"><MiniAvatar initials={log.i} className="h-9 w-9" /><span className="absolute -bottom-1 -right-1 grid h-4 w-4 place-items-center rounded-full bg-[#f1efe9] ring-2 ring-white"><Icon size={9} /></span></div><div className="text-sm leading-6 text-[#5b666c]"><b className="text-[#183044]">{log.user}</b> {log.action} <b className="text-[#183044]">{log.target}</b><div className="text-xs text-[#92989b] md:hidden">{log.time}</div></div><Badge className="hidden bg-[#f2f0ea] font-medium text-[#677279] md:inline-flex">{log.detail}</Badge></div></div>; })}{filteredLogs.length === 0 && <div className="grid min-h-64 place-items-center text-center"><div><History size={30} className="mx-auto text-[#a3aaad]" /><h2 className="mt-4 font-serif text-xl font-semibold">Aktivitas tidak ditemukan</h2><p className="mt-2 text-sm text-[#747d81]">Coba project, pengguna, atau kata kunci lain.</p><Button variant="outline" className="mt-4" onClick={resetFilters}>Reset filter</Button></div></div>}</section>
+  </div>;
+}
+
+type ProfileData = { name: string; email: string; role: string; image: string | null };
+
+function ProfilePage({ profile, onSave, onLogout }: { profile: ProfileData; onSave: (profile: ProfileData) => void | Promise<void>; onLogout: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(profile);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (!editing) setDraft(profile); }, [profile, editing]);
+  const initials = profile.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+  const previewImage = editing ? draft.image : profile.image;
+  const selectPhoto = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setError("");
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Gunakan foto berformat JPG, PNG, atau WebP.");
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      setError("Ukuran foto maksimal 1 MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setDraft((current) => ({ ...current, image: String(reader.result) }));
+      setEditing(true);
+    };
+    reader.onerror = () => setError("Foto tidak dapat dibaca. Silakan pilih file lain.");
+    reader.readAsDataURL(file);
+  };
+  const save = async () => {
+    if (!draft.name.trim() || !draft.email.trim() || !draft.role.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      await onSave({ name: draft.name.trim(), email: draft.email.trim(), role: draft.role.trim(), image: draft.image });
+      setEditing(false);
+    } catch {
+      setError("Perubahan profil belum tersimpan. Silakan coba lagi.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <div className="fade-up"><SectionHeading eyebrow="Account" title="Profil anggota" description="Kelola identitas yang tampil pada kolaborasi dan riwayat aktivitas workspace." />
+    <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
+      <aside className="bg-[#193246] p-6 text-white"><Avatar className="h-20 w-20 ring-4 ring-white/10">{previewImage && <AvatarImage src={previewImage} alt={`Foto ${profile.name}`} className="object-cover" />}<AvatarFallback className="bg-[#e76f36] font-serif text-2xl text-white">{initials}</AvatarFallback></Avatar><h2 className="mt-5 font-serif text-2xl font-semibold">{profile.name}</h2><p className="mt-1 text-sm text-[#a9b7c0]">{profile.email}</p><Badge className="mt-4 bg-white/10 text-[#d9e1e6]">{profile.role}</Badge><div className="mt-8 border-t border-white/10 pt-5"><div className="flex items-center gap-2 text-xs text-[#a9b7c0]"><ShieldCheck size={15} className="text-[#e9a17d]" />Akun anggota workspace</div><button onClick={onLogout} className="mt-5 text-xs font-semibold text-[#e9a17d] hover:text-white">Keluar dari workspace</button></div></aside>
+      <section className="bg-white p-6 md:p-8"><div className="flex items-start justify-between gap-4"><div><h2 className="font-serif text-2xl font-semibold">Informasi profil</h2><p className="mt-1 text-sm text-[#747d81]">Informasi ini terlihat oleh seluruh anggota tim.</p></div>{!editing && <Button variant="outline" onClick={() => setEditing(true)}><MoreHorizontal size={16} /> Edit profil</Button>}</div>
+        <div className="mt-8 max-w-2xl space-y-5">
+          <div className="border border-[#e3e0d8] bg-[#faf9f5] p-4"><div className="flex flex-col gap-4 sm:flex-row sm:items-center"><Avatar className="h-16 w-16 shrink-0">{previewImage && <AvatarImage src={previewImage} alt="Preview foto profil" className="object-cover" />}<AvatarFallback className="bg-[#e76f36] font-serif text-xl text-white">{initials}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><div className="text-sm font-semibold text-[#183044]">Foto profil</div><p className="mt-1 text-xs leading-5 text-[#7b8387]">JPG, PNG, atau WebP. Ukuran maksimal 1 MB.</p><div className="mt-3 flex flex-wrap gap-2"><input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={selectPhoto} className="hidden" /><Button type="button" size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}><Camera size={15} />{previewImage ? "Ganti foto" : "Unggah foto"}</Button>{previewImage && <Button type="button" size="sm" variant="ghost" onClick={() => { setDraft((current) => ({ ...current, image: null })); setEditing(true); }}>Hapus foto</Button>}</div></div></div></div>
+          {error && <div className="border-l-2 border-[#d8564e] bg-[#f9e8e5] px-3 py-2 text-xs text-[#a43d37]">{error}</div>}
+          <label className="block text-xs font-bold text-[#59656c]">Nama lengkap<Input className="mt-2 font-normal" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} disabled={!editing} /></label><label className="block text-xs font-bold text-[#59656c]">Email<Input type="email" className="mt-2 font-normal" value={draft.email} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} disabled={!editing} /></label><label className="block text-xs font-bold text-[#59656c]">Peran di tim<Input className="mt-2 font-normal" value={draft.role} onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))} disabled={!editing} /></label>{editing && <div className="flex justify-end gap-2 pt-3"><Button variant="ghost" onClick={() => { setDraft(profile); setError(""); setEditing(false); }} disabled={saving}>Batal</Button><Button onClick={() => { void save(); }} disabled={saving || !draft.name.trim() || !draft.email.trim() || !draft.role.trim()}>{saving ? <LoaderCircle size={16} className="animate-spin" /> : <Check size={16} />}{saving ? "Menyimpan..." : "Simpan profil"}</Button></div>}
+        </div>
+      </section>
+    </div>
+  </div>;
+}
+
+function AuthScreen({ onEnterDemo }: { onEnterDemo: () => void }) {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) { setError("Masukkan alamat email yang valid."); return; }
+    if (password.length < 8) { setError("Password harus terdiri dari minimal 8 karakter."); return; }
+    if (mode === "register" && name.trim().length < 2) { setError("Nama lengkap harus terdiri dari minimal 2 karakter."); return; }
+    setLoading(true);
+    const result = mode === "login"
+      ? await authClient.signIn.email({ email: normalizedEmail, password, rememberMe: true })
+      : await authClient.signUp.email({ email: normalizedEmail, password, name: name.trim() });
+    if (result.error) {
+      setError(result.error.message || "Autentikasi gagal. Periksa data Anda.");
+      setLoading(false);
+      return;
+    }
+    window.location.reload();
+  };
+
+  return (
+    <main className="grid min-h-screen bg-[#f5f3ed] lg:grid-cols-[1.05fr_.95fr]">
+      <section className="relative hidden overflow-hidden bg-[#193246] p-14 text-white lg:flex lg:flex-col">
+        <div className="absolute inset-0 grid-paper opacity-[.035]" />
+        <div className="relative flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-lg bg-[#e76f36] text-xl font-black">R</span><div><div className="font-serif text-2xl font-semibold">Ruang Riset</div><div className="text-[10px] uppercase tracking-[.2em] text-[#9eb0bc]">Center of Research</div></div></div>
+        <div className="relative my-auto max-w-xl"><div className="mb-5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.22em] text-[#e9a17d]"><span className="h-px w-8 bg-[#e9a17d]" />Track · Schedule · Complete · Archive</div><h1 className="font-serif text-5xl font-semibold leading-[1.08] tracking-[-.03em]">Satu ruang untuk setiap proses riset yang berarti.</h1><p className="mt-6 max-w-lg text-base leading-7 text-[#b6c3cb]">Jaga project, agenda, aset, dan keputusan tim tetap tersambung—dari brief pertama hingga laporan final.</p></div>
+        <div className="relative flex items-center gap-3 text-xs text-[#8499a7]"><ShieldCheck size={16} className="text-[#e9a17d]" />Workspace privat dengan sesi terenkripsi</div>
+      </section>
+      <section className="flex items-center justify-center px-5 py-12">
+        <div className="w-full max-w-md">
+          <div className="mb-10 flex items-center gap-3 lg:hidden"><span className="grid h-9 w-9 place-items-center rounded-lg bg-[#e76f36] font-black text-white">R</span><span className="font-serif text-xl font-semibold">Ruang Riset</span></div>
+          <div className="text-[10px] font-bold uppercase tracking-[.2em] text-[#e76f36]">Workspace tim</div>
+          <h2 className="mt-3 font-serif text-4xl font-semibold tracking-[-.025em]">{mode === "login" ? "Selamat datang kembali." : "Buat akun anggota."}</h2>
+          <p className="mt-3 text-sm leading-6 text-[#6d767a]">{mode === "login" ? "Masuk untuk melanjutkan pekerjaan tim riset." : "Gunakan email kerja dan kata sandi minimal 8 karakter."}</p>
+          <form onSubmit={submit} className="mt-8 space-y-4">
+            {mode === "register" && <label className="block text-xs font-bold text-[#59656c]">Nama lengkap<Input value={name} onChange={(e) => setName(e.target.value)} className="mt-2" placeholder="Nama anggota tim" required /></label>}
+            <label className="block text-xs font-bold text-[#59656c]">Email<Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="mt-2" placeholder="nama@perusahaan.com" required /></label>
+            <label className="block text-xs font-bold text-[#59656c]">Password<Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="mt-2" placeholder="Minimal 8 karakter" minLength={8} required /></label>
+            {error && <div className="border-l-2 border-[#d8564e] bg-[#f9e8e5] px-3 py-2 text-xs text-[#a43d37]">{error}</div>}
+            <Button type="submit" className="mt-2 w-full" disabled={loading}>{loading ? <LoaderCircle size={17} className="animate-spin" /> : <LogIn size={17} />}{loading ? "Memproses..." : mode === "login" ? "Masuk ke workspace" : "Daftar dan masuk"}</Button>
+          </form>
+          <div className="my-5 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#9a9fa2]"><span className="h-px flex-1 bg-[#dedbd3]" />atau<span className="h-px flex-1 bg-[#dedbd3]" /></div>
+          <Button type="button" variant="outline" className="w-full" onClick={onEnterDemo}><LayoutDashboard size={17} /> Masuk mode demo</Button>
+          <p className="mt-2 text-center text-[11px] leading-5 text-[#8a9194]">Gunakan data mock untuk mengecek Dashboard dan Kanban tanpa backend.</p>
+          <div className="mt-6 border-t border-[#dedbd3] pt-5 text-center text-xs text-[#717a7e]">{mode === "login" ? "Belum memiliki akun?" : "Sudah memiliki akun?"} <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }} className="font-bold text-[#e76f36] hover:underline">{mode === "login" ? "Daftar sekarang" : "Masuk di sini"}</button></div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+export default function Home() {
+  const { data: session, isPending } = authClient.useSession();
+  const [demoMode, setDemoMode] = useState(false);
+  const [demoReady, setDemoReady] = useState(false);
+  const [active, setActive] = useState<View>("dashboard");
+  const [projects, setProjects] = useState<Project[]>(initialProjects);
+  const [profile, setProfile] = useState<ProfileData>({ name: "Angga Demo", email: "angga.demo@ruangriset.id", role: "Research Lead", image: null });
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setDemoMode(window.sessionStorage.getItem("ruang-riset-demo") === "true");
+    setDemoReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (session?.user) setProfile((current) => ({ ...current, name: session.user.name, email: session.user.email, image: session.user.image ?? null }));
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    fetch("/api/profile")
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load profile")))
+      .then((payload: { data: { name: string; email: string; image: string | null } }) => {
+        if (!cancelled) setProfile((current) => ({ ...current, name: payload.data.name, email: payload.data.email, image: payload.data.image }));
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    fetch("/api/projects")
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load projects")))
+      .then((payload: { data: ApiProject[] }) => { if (!cancelled) setProjects(payload.data.map(fromApiProject)); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [session]);
+
+  if (isPending || !demoReady) return <div className="grid min-h-screen place-items-center bg-[#f5f3ed] text-[#e76f36]"><LoaderCircle className="animate-spin" size={28} /></div>;
+  if (!session && !demoMode) return <AuthScreen onEnterDemo={() => { window.sessionStorage.setItem("ruang-riset-demo", "true"); setDemoMode(true); }} />;
+
+  const userName = profile.name;
+  const logout = () => { if (!session) { window.sessionStorage.removeItem("ruang-riset-demo"); setDemoMode(false); setActive("dashboard"); return; } void authClient.signOut().then(() => window.location.reload()); };
+  const saveProfile = async (nextProfile: ProfileData) => {
+    if (!session) {
+      setProfile(nextProfile);
+      return;
+    }
+    const response = await fetch("/api/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: nextProfile.name, image: nextProfile.image }),
+    });
+    if (!response.ok) throw new Error("Failed to save profile");
+    const payload = await response.json() as { data: { name: string; email: string; image: string | null } };
+    setProfile({ ...nextProfile, name: payload.data.name, email: payload.data.email, image: payload.data.image });
+  };
+
+  let page: React.ReactNode;
+  if (active === "dashboard") page = <Dashboard projects={projects} goTo={setActive} />;
+  else if (active === "tracker") page = <ProjectTracker projects={projects} setProjects={setProjects} backendEnabled={!!session} />;
+  else if (active === "calendar") page = <CalendarPlanner projects={projects} backendEnabled={!!session} />;
+  else if (active === "library") page = <AssetLibrary backendEnabled={!!session} />;
+  else if (active === "activity") page = <ActivityHistory />;
+  else page = <ProfilePage profile={profile} onSave={saveProfile} onLogout={logout} />;
+
+  return (
+    <div className="min-h-screen bg-[#f5f3ed]">
+      <Sidebar active={active} onChange={setActive} open={menuOpen} onClose={() => setMenuOpen(false)} userName={userName} onProfile={() => { setActive("profile"); setMenuOpen(false); }} onLogout={logout} />
+      <div className="lg:pl-[252px]">
+        <Header active={active} onMenu={() => setMenuOpen(true)} userName={userName} onProfile={() => setActive("profile")} onNavigate={setActive} backendEnabled={!!session} />
+        <main className="mx-auto max-w-[1600px] px-5 py-7 md:px-8 md:py-9">{page}</main>
+        <footer className="mx-5 flex items-center justify-between border-t border-[#ddd9d0] py-5 text-[10px] uppercase tracking-[.14em] text-[#989d9f] md:mx-8"><span>Ruang Riset © 2026</span><span className="flex items-center gap-1.5"><Sparkles size={11} /> Keep curiosity alive</span></footer>
+      </div>
+    </div>
+  );
+}

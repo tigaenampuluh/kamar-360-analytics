@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #183044;
+  --paper: #f5f3ed;
+  --orange: #e76f36;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--paper); }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+::selection { background: #f4b89a; color: #183044; }
+.font-serif { font-family: Georgia, Cambria, "Times New Roman", serif; }
+.thin-scrollbar { scrollbar-width: thin; scrollbar-color: #c9c7c0 transparent; }
+.thin-scrollbar::-webkit-scrollbar { width: 7px; height: 7px; }
+.thin-scrollbar::-webkit-scrollbar-thumb { background: #c9c7c0; border-radius: 999px; }
+.grid-paper {
+  background-image: linear-gradient(#ddd9ce 1px, transparent 1px), linear-gradient(90deg, #ddd9ce 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .fade-up { animation: fade-up .38s ease-out both; }
+  @keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+}
