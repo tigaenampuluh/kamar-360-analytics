@@ -146,6 +146,16 @@ export const notifications = pgTable("notifications", {
   index("idx_notifications_agenda_id").on(table.agendaId),
 ]);
 
+export const signupInvites = pgTable("signup_invites", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  addedBy: text("added_by").references(() => user.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+}, (table) => [
+  index("idx_signup_invites_revoked_at").on(table.revokedAt),
+]);
+
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),

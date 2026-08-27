@@ -8,6 +8,10 @@ export function unauthorized() {
   return Response.json({ error: "Authentication required" }, { status: 401 });
 }
 
+export function forbidden(message = "Administrator access required") {
+  return Response.json({ error: message }, { status: 403 });
+}
+
 export function badRequest(message: string, details?: unknown) {
   return Response.json({ error: message, details }, { status: 400 });
 }

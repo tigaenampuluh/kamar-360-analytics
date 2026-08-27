@@ -15,6 +15,8 @@ import {
   CircleAlert,
   Clock3,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileText,
   Filter,
   FolderOpen,
@@ -24,6 +26,7 @@ import {
   Link2,
   LoaderCircle,
   LogIn,
+  MailPlus,
   Menu,
   MoreHorizontal,
   Plus,
@@ -31,6 +34,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
@@ -42,7 +46,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
 
-type View = "dashboard" | "tracker" | "calendar" | "library" | "activity" | "profile";
+type View = "dashboard" | "tracker" | "calendar" | "library" | "activity" | "admin" | "profile";
 type Status = "On Going" | "Delay" | "Pending" | "Revisi" | "Done";
 type Priority = "High" | "Medium" | "Low";
 
@@ -128,6 +132,7 @@ const navItems: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "calendar", label: "Calendar Planner", icon: CalendarDays },
   { id: "library", label: "Asset & Library", icon: Archive },
   { id: "activity", label: "Activity History", icon: History },
+  { id: "admin", label: "Admin Anggota", icon: ShieldCheck },
 ];
 
 const teamColors: Record<string, string> = {
@@ -146,7 +151,7 @@ function MiniAvatar({ initials, className }: { initials: string; className?: str
   );
 }
 
-function Sidebar({ active, onChange, open, onClose, userName, onProfile, onLogout }: { active: View; onChange: (v: View) => void; open: boolean; onClose: () => void; userName: string; onProfile: () => void; onLogout: () => void }) {
+function Sidebar({ active, onChange, open, onClose, userName, isAdmin, onProfile, onLogout }: { active: View; onChange: (v: View) => void; open: boolean; onClose: () => void; userName: string; isAdmin: boolean; onProfile: () => void; onLogout: () => void }) {
   return (
     <>
       {open && <button className="fixed inset-0 z-30 bg-[#122838]/45 lg:hidden" onClick={onClose} aria-label="Tutup navigasi" />}
@@ -164,7 +169,7 @@ function Sidebar({ active, onChange, open, onClose, userName, onProfile, onLogou
 
         <div className="mt-10 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#7790a0]">Workspace</div>
         <nav className="mt-3 space-y-1">
-          {navItems.map((item) => {
+          {navItems.filter((item) => item.id !== "admin" || isAdmin).map((item) => {
             const Icon = item.icon;
             const selected = active === item.id;
             return (
@@ -1039,31 +1044,185 @@ function ProfilePage({ profile, onSave, onLogout }: { profile: ProfileData; onSa
   </div>;
 }
 
+type AdminInvite = {
+  id: number | string;
+  email: string;
+  createdAt: string | null;
+  source: "database" | "environment";
+  removable: boolean;
+  registered: boolean;
+  memberName: string | null;
+};
+
+function AdminMembersPage() {
+  const [invites, setInvites] = useState<AdminInvite[]>([]);
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const loadInvites = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/invites");
+      const payload = await response.json() as { data?: AdminInvite[]; error?: string };
+      if (!response.ok || !payload.data) throw new Error(payload.error || "Gagal memuat undangan");
+      setInvites(payload.data);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Daftar anggota belum dapat dimuat.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadInvites(); }, [loadInvites]);
+
+  const addInvite = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) { setError("Masukkan alamat email yang valid."); return; }
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/admin/invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Gagal menambahkan email");
+      setEmail("");
+      setNotice(`${normalizedEmail} sekarang boleh membuat akun.`);
+      await loadInvites();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Email belum dapat ditambahkan.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const revokeInvite = async (invite: AdminInvite) => {
+    if (typeof invite.id !== "number") return;
+    if (!window.confirm(`Nonaktifkan izin pendaftaran untuk ${invite.email}? Akun yang sudah aktif tidak akan dihapus.`)) return;
+    setError("");
+    setNotice("");
+    const response = await fetch(`/api/admin/invites/${invite.id}`, { method: "DELETE" });
+    const payload = await response.json() as { error?: string };
+    if (!response.ok) { setError(payload.error || "Undangan belum dapat dinonaktifkan."); return; }
+    setNotice(`Izin pendaftaran ${invite.email} dinonaktifkan.`);
+    setInvites((current) => current.filter((item) => item.id !== invite.id));
+  };
+
+  return <div className="fade-up">
+    <SectionHeading eyebrow="Administration" title="Anggota & undangan" description="Tentukan email yang boleh membuat akun dan pantau siapa yang sudah bergabung." />
+    <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
+      <section className="bg-[#193246] p-6 text-white">
+        <div className="grid h-11 w-11 place-items-center rounded-full bg-white/10"><UserPlus size={20} className="text-[#e9a17d]" /></div>
+        <h2 className="mt-5 font-serif text-2xl font-semibold">Undang anggota</h2>
+        <p className="mt-2 text-sm leading-6 text-[#b6c3cb]">Tambahkan email sebelum anggota membuka formulir pendaftaran. Perubahan berlaku langsung tanpa redeploy.</p>
+        <form onSubmit={addInvite} className="mt-6 space-y-3">
+          <label className="block text-xs font-bold text-[#c6d0d6]">Email anggota<Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2 border-white/15 bg-white text-[#183044]" placeholder="nama@perusahaan.com" required /></label>
+          <Button type="submit" className="w-full" disabled={saving}>{saving ? <LoaderCircle size={16} className="animate-spin" /> : <MailPlus size={16} />}{saving ? "Menambahkan..." : "Izinkan pendaftaran"}</Button>
+        </form>
+        <p className="mt-4 text-[11px] leading-5 text-[#91a4b0]">Menonaktifkan undangan tidak menghapus akun anggota yang sudah terdaftar.</p>
+      </section>
+      <section className="bg-white p-6 md:p-8">
+        <div className="flex items-start justify-between gap-4"><div><h2 className="font-serif text-2xl font-semibold">Daftar akses</h2><p className="mt-1 text-sm text-[#747d81]">{invites.length} email memiliki akses pendaftaran.</p></div><Button variant="outline" size="sm" onClick={() => void loadInvites()} disabled={loading}>Muat ulang</Button></div>
+        {error && <div className="mt-5 border-l-2 border-[#d8564e] bg-[#f9e8e5] px-3 py-2 text-xs text-[#a43d37]">{error}</div>}
+        {notice && <div className="mt-5 border-l-2 border-[#4f826c] bg-[#e5efe9] px-3 py-2 text-xs text-[#356450]">{notice}</div>}
+        {loading ? <div className="grid min-h-52 place-items-center text-[#e76f36]"><LoaderCircle className="animate-spin" size={24} /></div> : <div className="mt-6 divide-y divide-[#ebe8df] border-y border-[#ebe8df]">
+          {invites.map((invite) => <div key={invite.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center">
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#eef1f2] text-[#53626b]"><Users size={16} /></div>
+            <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-[#183044]">{invite.email}</div><div className="mt-1 text-[11px] text-[#879095]">{invite.registered ? `${invite.memberName || "Anggota"} · Akun aktif` : "Menunggu pendaftaran"}{invite.source === "environment" ? " · Admin awal" : ""}</div></div>
+            <Badge className={invite.registered ? "bg-[#e5efe9] text-[#3f6f5b]" : "bg-[#f7efdc] text-[#996c17]"}>{invite.registered ? "Terdaftar" : "Diundang"}</Badge>
+            {invite.removable && <Button type="button" variant="ghost" size="sm" onClick={() => void revokeInvite(invite)}><Trash2 size={14} /> Nonaktifkan</Button>}
+          </div>)}
+          {invites.length === 0 && <div className="py-12 text-center text-sm text-[#7b8387]">Belum ada email yang diizinkan.</div>}
+        </div>}
+      </section>
+    </div>
+  </div>;
+}
+
+function PasswordField({ label, value, onChange, placeholder, autoComplete, action }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; autoComplete: string; action?: React.ReactNode }) {
+  const [visible, setVisible] = useState(false);
+  return <label className="block text-xs font-bold text-[#59656c]"><span className="flex items-center justify-between gap-3"><span>{label}</span>{action}</span><span className="relative mt-2 block"><Input type={visible ? "text" : "password"} value={value} onChange={(event) => onChange(event.target.value)} className="pr-11" placeholder={placeholder} autoComplete={autoComplete} minLength={8} required /><button type="button" onClick={() => setVisible((current) => !current)} className="absolute inset-y-0 right-0 grid w-10 place-items-center text-[#7c8589] hover:text-[#183044]" aria-label={visible ? "Sembunyikan password" : "Lihat password"}>{visible ? <EyeOff size={17} /> : <Eye size={17} />}</button></span></label>;
+}
+
+type AuthMode = "login" | "register" | "forgot" | "reset";
+
 function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; demoEnabled: boolean }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetToken, setResetToken] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+    if (token) { setResetToken(token); setMode("reset"); return; }
+    if (params.get("error")) { setMode("forgot"); setError("Tautan reset tidak valid atau sudah kedaluwarsa. Minta tautan baru."); }
+  }, []);
+
+  const switchMode = (nextMode: AuthMode) => {
+    setMode(nextMode);
+    setError("");
+    setNotice("");
+    setPassword("");
+    setConfirmPassword("");
+  };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
+    setNotice("");
     const normalizedEmail = email.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) { setError("Masukkan alamat email yang valid."); return; }
-    if (password.length < 8) { setError("Password harus terdiri dari minimal 8 karakter."); return; }
+    if (mode !== "reset" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) { setError("Masukkan alamat email yang valid."); return; }
+    if (mode !== "forgot" && password.length < 8) { setError("Password harus terdiri dari minimal 8 karakter."); return; }
     if (mode === "register" && name.trim().length < 2) { setError("Nama lengkap harus terdiri dari minimal 2 karakter."); return; }
+    if (mode === "reset" && password !== confirmPassword) { setError("Konfirmasi password belum sama."); return; }
     setLoading(true);
-    const result = mode === "login"
-      ? await authClient.signIn.email({ email: normalizedEmail, password, rememberMe: true })
-      : await authClient.signUp.email({ email: normalizedEmail, password, name: name.trim() });
-    if (result.error) {
-      setError(result.error.message || "Autentikasi gagal. Periksa data Anda.");
+    try {
+      if (mode === "forgot") {
+        const result = await authClient.requestPasswordReset({ email: normalizedEmail, redirectTo: `${window.location.origin}/?resetPassword=1` });
+        if (result.error) throw new Error(result.error.message || "Email reset belum dapat dikirim.");
+        setNotice("Jika email terdaftar, tautan reset password akan segera dikirim.");
+        return;
+      }
+      if (mode === "reset") {
+        if (!resetToken) throw new Error("Tautan reset tidak valid atau sudah kedaluwarsa.");
+        const result = await authClient.resetPassword({ newPassword: password, token: resetToken });
+        if (result.error) throw new Error(result.error.message || "Password belum dapat diubah.");
+        window.history.replaceState({}, "", window.location.pathname);
+        switchMode("login");
+        setNotice("Password berhasil diperbarui. Silakan masuk kembali.");
+        return;
+      }
+      const result = mode === "login"
+        ? await authClient.signIn.email({ email: normalizedEmail, password, rememberMe: true })
+        : await authClient.signUp.email({ email: normalizedEmail, password, name: name.trim() });
+      if (result.error) throw new Error(result.error.message || "Autentikasi gagal. Periksa data Anda.");
+      window.location.reload();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Permintaan belum dapat diproses.");
+    } finally {
       setLoading(false);
-      return;
     }
-    window.location.reload();
+  };
+
+  const headings: Record<AuthMode, { title: string; description: string }> = {
+    login: { title: "Selamat datang kembali.", description: "Masuk untuk melanjutkan pekerjaan tim riset." },
+    register: { title: "Buat akun anggota.", description: "Gunakan email yang sudah diizinkan admin dan password minimal 8 karakter." },
+    forgot: { title: "Lupa password?", description: "Masukkan email akun Anda untuk menerima tautan reset." },
+    reset: { title: "Buat password baru.", description: "Gunakan minimal 8 karakter yang mudah Anda ingat dan sulit ditebak." },
   };
 
   return (
@@ -1078,19 +1237,19 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
         <div className="w-full max-w-md">
           <div className="mb-10 flex items-center gap-3 lg:hidden"><span className="grid h-9 w-9 place-items-center rounded-lg bg-[#e76f36] font-black text-white">R</span><span className="font-serif text-xl font-semibold">Ruang Riset</span></div>
           <div className="text-[10px] font-bold uppercase tracking-[.2em] text-[#e76f36]">Workspace tim</div>
-          <h2 className="mt-3 font-serif text-4xl font-semibold tracking-[-.025em]">{mode === "login" ? "Selamat datang kembali." : "Buat akun anggota."}</h2>
-          <p className="mt-3 text-sm leading-6 text-[#6d767a]">{mode === "login" ? "Masuk untuk melanjutkan pekerjaan tim riset." : "Gunakan email kerja dan kata sandi minimal 8 karakter."}</p>
+          <h2 className="mt-3 font-serif text-4xl font-semibold tracking-[-.025em]">{headings[mode].title}</h2>
+          <p className="mt-3 text-sm leading-6 text-[#6d767a]">{headings[mode].description}</p>
           <form onSubmit={submit} className="mt-8 space-y-4">
-            {mode === "register" && <label className="block text-xs font-bold text-[#59656c]">Nama lengkap<Input value={name} onChange={(e) => setName(e.target.value)} className="mt-2" placeholder="Nama anggota tim" required /></label>}
-            <label className="block text-xs font-bold text-[#59656c]">Email<Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="mt-2" placeholder="nama@perusahaan.com" required /></label>
-            <label className="block text-xs font-bold text-[#59656c]">Password<Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="mt-2" placeholder="Minimal 8 karakter" minLength={8} required /></label>
+            {mode === "register" && <label className="block text-xs font-bold text-[#59656c]">Nama lengkap<Input value={name} onChange={(event) => setName(event.target.value)} className="mt-2" placeholder="Nama anggota tim" autoComplete="name" required /></label>}
+            {mode !== "reset" && <label className="block text-xs font-bold text-[#59656c]">Email<Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2" placeholder="nama@perusahaan.com" autoComplete="email" required /></label>}
+            {(mode === "login" || mode === "register") && <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Minimal 8 karakter" autoComplete={mode === "login" ? "current-password" : "new-password"} action={mode === "login" ? <button type="button" onClick={() => switchMode("forgot")} className="font-semibold text-[#e76f36] hover:underline">Lupa password?</button> : undefined} />}
+            {mode === "reset" && <><PasswordField label="Password baru" value={password} onChange={setPassword} placeholder="Minimal 8 karakter" autoComplete="new-password" /><PasswordField label="Ulangi password baru" value={confirmPassword} onChange={setConfirmPassword} placeholder="Ketik sekali lagi" autoComplete="new-password" /></>}
             {error && <div className="border-l-2 border-[#d8564e] bg-[#f9e8e5] px-3 py-2 text-xs text-[#a43d37]">{error}</div>}
-            <Button type="submit" className="mt-2 w-full" disabled={loading}>{loading ? <LoaderCircle size={17} className="animate-spin" /> : <LogIn size={17} />}{loading ? "Memproses..." : mode === "login" ? "Masuk ke workspace" : "Daftar dan masuk"}</Button>
+            {notice && <div className="border-l-2 border-[#4f826c] bg-[#e5efe9] px-3 py-2 text-xs text-[#356450]">{notice}</div>}
+            <Button type="submit" className="mt-2 w-full" disabled={loading}>{loading ? <LoaderCircle size={17} className="animate-spin" /> : mode === "forgot" ? <MailPlus size={17} /> : mode === "reset" ? <Check size={17} /> : <LogIn size={17} />}{loading ? "Memproses..." : mode === "login" ? "Masuk ke workspace" : mode === "register" ? "Daftar dan masuk" : mode === "forgot" ? "Kirim tautan reset" : "Simpan password baru"}</Button>
           </form>
-          {demoEnabled && <><div className="my-5 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#9a9fa2]"><span className="h-px flex-1 bg-[#dedbd3]" />atau<span className="h-px flex-1 bg-[#dedbd3]" /></div>
-          <Button type="button" variant="outline" className="w-full" onClick={onEnterDemo}><LayoutDashboard size={17} /> Masuk mode demo</Button>
-          <p className="mt-2 text-center text-[11px] leading-5 text-[#8a9194]">Gunakan data mock untuk mengecek Dashboard dan Kanban tanpa backend.</p></>}
-          <div className="mt-6 border-t border-[#dedbd3] pt-5 text-center text-xs text-[#717a7e]">{mode === "login" ? "Belum memiliki akun?" : "Sudah memiliki akun?"} <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }} className="font-bold text-[#e76f36] hover:underline">{mode === "login" ? "Daftar sekarang" : "Masuk di sini"}</button></div>
+          {mode === "login" && demoEnabled && <><div className="my-5 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#9a9fa2]"><span className="h-px flex-1 bg-[#dedbd3]" />atau<span className="h-px flex-1 bg-[#dedbd3]" /></div><Button type="button" variant="outline" className="w-full" onClick={onEnterDemo}><LayoutDashboard size={17} /> Masuk mode demo</Button><p className="mt-2 text-center text-[11px] leading-5 text-[#8a9194]">Gunakan data mock untuk mengecek Dashboard dan Kanban tanpa backend.</p></>}
+          {(mode === "login" || mode === "register") ? <div className="mt-6 border-t border-[#dedbd3] pt-5 text-center text-xs text-[#717a7e]">{mode === "login" ? "Belum memiliki akun?" : "Sudah memiliki akun?"} <button onClick={() => switchMode(mode === "login" ? "register" : "login")} className="font-bold text-[#e76f36] hover:underline">{mode === "login" ? "Daftar sekarang" : "Masuk di sini"}</button></div> : <div className="mt-6 border-t border-[#dedbd3] pt-5 text-center text-xs"><button onClick={() => switchMode("login")} className="font-bold text-[#e76f36] hover:underline">Kembali ke halaman masuk</button></div>}
         </div>
       </section>
     </main>
@@ -1104,6 +1263,7 @@ export default function Home() {
   const [active, setActive] = useState<View>("dashboard");
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [profile, setProfile] = useState<ProfileData>({ name: "Angga Demo", email: "angga.demo@ruangriset.id", role: "Research Lead", image: null });
+  const [isAdmin, setIsAdmin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -1120,8 +1280,11 @@ export default function Home() {
     let cancelled = false;
     fetch("/api/profile")
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load profile")))
-      .then((payload: { data: { name: string; email: string; image: string | null } }) => {
-        if (!cancelled) setProfile((current) => ({ ...current, name: payload.data.name, email: payload.data.email, image: payload.data.image }));
+      .then((payload: { data: { name: string; email: string; image: string | null; isAdmin: boolean } }) => {
+        if (!cancelled) {
+          setProfile((current) => ({ ...current, name: payload.data.name, email: payload.data.email, image: payload.data.image, role: payload.data.isAdmin ? "Administrator" : current.role }));
+          setIsAdmin(payload.data.isAdmin);
+        }
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
@@ -1163,11 +1326,12 @@ export default function Home() {
   else if (active === "calendar") page = <CalendarPlanner projects={projects} backendEnabled={!!session} />;
   else if (active === "library") page = <AssetLibrary backendEnabled={!!session} />;
   else if (active === "activity") page = <ActivityHistory />;
+  else if (active === "admin" && isAdmin) page = <AdminMembersPage />;
   else page = <ProfilePage profile={profile} onSave={saveProfile} onLogout={logout} />;
 
   return (
     <div className="min-h-screen bg-[#f5f3ed]">
-      <Sidebar active={active} onChange={setActive} open={menuOpen} onClose={() => setMenuOpen(false)} userName={userName} onProfile={() => { setActive("profile"); setMenuOpen(false); }} onLogout={logout} />
+      <Sidebar active={active} onChange={setActive} open={menuOpen} onClose={() => setMenuOpen(false)} userName={userName} isAdmin={isAdmin} onProfile={() => { setActive("profile"); setMenuOpen(false); }} onLogout={logout} />
       <div className="lg:pl-[252px]">
         <Header active={active} onMenu={() => setMenuOpen(true)} userName={userName} onProfile={() => setActive("profile")} onNavigate={setActive} backendEnabled={!!session} />
         <main className="mx-auto max-w-[1600px] px-5 py-7 md:px-8 md:py-9">{page}</main>

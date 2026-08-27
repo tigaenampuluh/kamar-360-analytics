@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { activityLogs, user } from "@/db/schema";
+import { isAdminEmail } from "@/lib/admin";
 import { badRequest, getApiSession, initials, notFound, unauthorized } from "@/lib/api";
 
 export const runtime = "nodejs";
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   }).from(user).where(eq(user.id, session.user.id)).limit(1);
-  return profile ? Response.json({ data: profile }) : notFound("Profile");
+  return profile ? Response.json({ data: { ...profile, isAdmin: isAdminEmail(profile.email) } }) : notFound("Profile");
 }
 
 export async function PATCH(request: Request) {

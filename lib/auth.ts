@@ -1,16 +1,13 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError, createAuthMiddleware } from "better-auth/api";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { authSchema } from "@/db/schema";
+import { authSchema, signupInvites } from "@/db/schema";
+import { getBootstrapAllowedEmails } from "@/lib/admin";
+import { sendPasswordResetEmail } from "@/lib/email";
 
 const isProduction = process.env.NODE_ENV === "production";
-const allowedSignUpEmails = new Set(
-  (process.env.ALLOWED_SIGNUP_EMAILS ?? "")
-    .split(",")
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean),
-);
 
 export const auth = betterAuth({
   appName: "Ruang Riset",
@@ -23,6 +20,11 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
+    revokeSessionsOnPasswordReset: true,
+    resetPasswordTokenExpiresIn: 60 * 60,
+    sendResetPassword: async ({ user, url }) => {
+      await sendPasswordResetEmail({ to: user.email, name: user.name, url });
+    },
   },
   session: {
     expiresIn: 60 * 60 * 24 * 7,
@@ -33,7 +35,14 @@ export const auth = betterAuth({
     before: createAuthMiddleware(async (context) => {
       if (!isProduction || context.path !== "/sign-up/email") return;
       const email = typeof context.body?.email === "string" ? context.body.email.trim().toLowerCase() : "";
-      if (!email || !allowedSignUpEmails.has(email)) {
+      const isBootstrapAllowed = email ? getBootstrapAllowedEmails().has(email) : false;
+      const [activeInvite] = email && !isBootstrapAllowed
+        ? await db.select({ id: signupInvites.id })
+          .from(signupInvites)
+          .where(and(eq(signupInvites.email, email), isNull(signupInvites.revokedAt)))
+          .limit(1)
+        : [];
+      if (!email || (!isBootstrapAllowed && !activeInvite)) {
         throw new APIError("FORBIDDEN", {
           message: "Pendaftaran hanya tersedia untuk email anggota yang telah disetujui.",
         });

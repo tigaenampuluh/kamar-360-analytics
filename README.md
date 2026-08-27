@@ -16,6 +16,8 @@ The first user can register from the sign-up form. Email/password sessions are m
 ## Production access controls
 
 - Set `ALLOWED_SIGNUP_EMAILS` to a comma-separated list of approved member emails. In production, sign-up is denied when the list is empty or the submitted email is not listed.
+- Set `ADMIN_EMAILS` to the initial administrator email(s). Administrators can manage future registration access from **Admin Anggota** without redeploying.
+- Set `RESEND_API_KEY` to enable password-reset delivery. `RESEND_FROM_EMAIL` defaults to Resend's onboarding sender for initial testing; use a sender on a verified domain before inviting the wider team.
 - Set `NEXT_PUBLIC_ENABLE_DEMO=false` to remove the mock-data demo entry point from the production login screen.
 - Store `DATABASE_URL` and `BETTER_AUTH_SECRET` as sensitive environment variables, and set `BETTER_AUTH_URL` to the exact HTTPS production origin.
 - Apply database migrations before opening the production application. Seed data is intended for local/demo environments and should not be applied to a clean production workspace unless explicitly desired.
