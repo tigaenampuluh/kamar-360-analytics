@@ -17,7 +17,7 @@ The first user can register from the sign-up form. Email/password sessions are m
 
 - Set `ALLOWED_SIGNUP_EMAILS` to a comma-separated list of approved member emails. In production, sign-up is denied when the list is empty or the submitted email is not listed.
 - Set `ADMIN_EMAILS` to the initial administrator email(s). Administrators can manage future registration access from **Admin Anggota** without redeploying.
-- Set `RESEND_API_KEY` to enable password-reset delivery. `RESEND_FROM_EMAIL` defaults to Resend's onboarding sender for initial testing; use a sender on a verified domain before inviting the wider team.
+- Permintaan lupa password masuk ke **Admin Anggota**. Admin menetapkan password sementara secara manual, lalu menyampaikannya kepada anggota melalui kanal internal yang aman. Seluruh sesi lama anggota otomatis dicabut.
 - Set `NEXT_PUBLIC_ENABLE_DEMO=false` to remove the mock-data demo entry point from the production login screen.
 - Store `DATABASE_URL` and `BETTER_AUTH_SECRET` as sensitive environment variables, and set `BETTER_AUTH_URL` to the exact HTTPS production origin.
 - Apply database migrations before opening the production application. Seed data is intended for local/demo environments and should not be applied to a clean production workspace unless explicitly desired.
@@ -35,6 +35,9 @@ The first user can register from the sign-up form. Email/password sessions are m
 - `GET /api/dashboard` — dashboard aggregates
 - `GET|PATCH /api/notifications` — list notifications and mark all as read
 - `PATCH /api/notifications/:id` — mark one notification as read
+- `POST /api/password-recovery` — submit a manual password-reset request
+- `GET /api/admin/password-resets` — list pending reset requests (admin only)
+- `PATCH /api/admin/password-resets/:id` — set a temporary password and revoke sessions (admin only)
 - `GET /api/health` — database health check
 
 All workspace routes except health and authentication require a valid Better Auth session. Project changes automatically create activity records, and moving a project to `Done` creates its archive entry.

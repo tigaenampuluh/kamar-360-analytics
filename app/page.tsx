@@ -14,6 +14,7 @@ import {
   ChevronRight,
   CircleAlert,
   Clock3,
+  Copy,
   ExternalLink,
   Eye,
   EyeOff,
@@ -22,6 +23,7 @@ import {
   FolderOpen,
   GripVertical,
   History,
+  KeyRound,
   LayoutDashboard,
   Link2,
   LoaderCircle,
@@ -1054,11 +1056,24 @@ type AdminInvite = {
   memberName: string | null;
 };
 
+type AdminPasswordReset = {
+  id: number;
+  userId: string;
+  email: string;
+  name: string;
+  requestedAt: string;
+};
+
 function AdminMembersPage() {
   const [invites, setInvites] = useState<AdminInvite[]>([]);
+  const [passwordResets, setPasswordResets] = useState<AdminPasswordReset[]>([]);
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(true);
+  const [resetLoading, setResetLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resetSaving, setResetSaving] = useState(false);
+  const [selectedReset, setSelectedReset] = useState<AdminPasswordReset | null>(null);
+  const [temporaryPassword, setTemporaryPassword] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -1077,7 +1092,22 @@ function AdminMembersPage() {
     }
   }, []);
 
-  useEffect(() => { void loadInvites(); }, [loadInvites]);
+  const loadPasswordResets = useCallback(async () => {
+    setResetLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/password-resets");
+      const payload = await response.json() as { data?: AdminPasswordReset[]; error?: string };
+      if (!response.ok || !payload.data) throw new Error(payload.error || "Gagal memuat permintaan reset password");
+      setPasswordResets(payload.data);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Permintaan reset password belum dapat dimuat.");
+    } finally {
+      setResetLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void Promise.all([loadInvites(), loadPasswordResets()]); }, [loadInvites, loadPasswordResets]);
 
   const addInvite = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -1116,6 +1146,36 @@ function AdminMembersPage() {
     setInvites((current) => current.filter((item) => item.id !== invite.id));
   };
 
+  const generateTemporaryPassword = () => {
+    const generated = `RR-${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}!7`;
+    setTemporaryPassword(generated);
+  };
+
+  const completePasswordReset = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedReset || temporaryPassword.length < 8) return;
+    setResetSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/admin/password-resets/${selectedReset.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword: temporaryPassword }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Password sementara belum dapat disimpan.");
+      setNotice(`Password sementara untuk ${selectedReset.email} berhasil ditetapkan. Semua sesi lamanya sudah dicabut.`);
+      setSelectedReset(null);
+      setTemporaryPassword("");
+      await loadPasswordResets();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Password sementara belum dapat disimpan.");
+    } finally {
+      setResetSaving(false);
+    }
+  };
+
   return <div className="fade-up">
     <SectionHeading eyebrow="Administration" title="Anggota & undangan" description="Tentukan email yang boleh membuat akun dan pantau siapa yang sudah bergabung." />
     <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
@@ -1144,6 +1204,29 @@ function AdminMembersPage() {
         </div>}
       </section>
     </div>
+    <section className="mt-6 bg-white p-6 md:p-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#e76f36]"><KeyRound size={14} /> Pemulihan akun</div><h2 className="mt-2 font-serif text-2xl font-semibold">Permintaan reset password</h2><p className="mt-1 text-sm text-[#747d81]">Tetapkan password sementara, lalu sampaikan langsung kepada anggota melalui kanal internal yang aman.</p></div><Button variant="outline" size="sm" onClick={() => void loadPasswordResets()} disabled={resetLoading}>Muat ulang</Button></div>
+      <div className="mt-6 divide-y divide-[#ebe8df] border-y border-[#ebe8df]">
+        {resetLoading ? <div className="grid min-h-40 place-items-center text-[#e76f36]"><LoaderCircle className="animate-spin" size={24} /></div> : passwordResets.map((recovery) => <div key={recovery.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center">
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#f7efdc] text-[#996c17]"><KeyRound size={16} /></div>
+          <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-[#183044]">{recovery.name}</div><div className="mt-1 text-[11px] text-[#879095]">{recovery.email} · {new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(recovery.requestedAt))}</div></div>
+          <Badge className="bg-[#f7efdc] text-[#996c17]">Menunggu admin</Badge>
+          <Button size="sm" onClick={() => { setSelectedReset(recovery); setTemporaryPassword(""); setError(""); }}><KeyRound size={14} /> Tetapkan password</Button>
+        </div>)}
+        {!resetLoading && passwordResets.length === 0 && <div className="py-12 text-center text-sm text-[#7b8387]">Tidak ada permintaan reset password yang menunggu.</div>}
+      </div>
+    </section>
+    <Dialog open={Boolean(selectedReset)} onOpenChange={(open) => { if (!open && !resetSaving) { setSelectedReset(null); setTemporaryPassword(""); } }}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Tetapkan password sementara</DialogTitle><DialogDescription>{selectedReset ? `Untuk ${selectedReset.name} (${selectedReset.email}).` : ""} Setelah disimpan, seluruh sesi lama anggota akan dicabut.</DialogDescription></DialogHeader>
+        <form onSubmit={completePasswordReset} className="mt-2 space-y-4">
+          <PasswordField label="Password sementara" value={temporaryPassword} onChange={setTemporaryPassword} placeholder="Minimal 8 karakter" autoComplete="new-password" action={<button type="button" onClick={generateTemporaryPassword} className="font-semibold text-[#e76f36] hover:underline">Buat otomatis</button>} />
+          <div className="rounded-md bg-[#f7efdc] p-3 text-xs leading-5 text-[#77581e]">Salin password sebelum menyimpan, lalu kirimkan secara pribadi. Sistem tidak akan menampilkan password ini lagi.</div>
+          {temporaryPassword && <Button type="button" variant="outline" className="w-full" onClick={() => void navigator.clipboard.writeText(temporaryPassword)}><Copy size={15} /> Salin password</Button>}
+          <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => { setSelectedReset(null); setTemporaryPassword(""); }} disabled={resetSaving}>Batal</Button><Button type="submit" disabled={resetSaving || temporaryPassword.length < 8}>{resetSaving ? <LoaderCircle size={16} className="animate-spin" /> : <Check size={16} />}{resetSaving ? "Menyimpan..." : "Simpan & cabut sesi"}</Button></div>
+        </form>
+      </DialogContent>
+    </Dialog>
   </div>;
 }
 
@@ -1152,32 +1235,22 @@ function PasswordField({ label, value, onChange, placeholder, autoComplete, acti
   return <label className="block text-xs font-bold text-[#59656c]"><span className="flex items-center justify-between gap-3"><span>{label}</span>{action}</span><span className="relative mt-2 block"><Input type={visible ? "text" : "password"} value={value} onChange={(event) => onChange(event.target.value)} className="pr-11" placeholder={placeholder} autoComplete={autoComplete} minLength={8} required /><button type="button" onClick={() => setVisible((current) => !current)} className="absolute inset-y-0 right-0 grid w-10 place-items-center text-[#7c8589] hover:text-[#183044]" aria-label={visible ? "Sembunyikan password" : "Lihat password"}>{visible ? <EyeOff size={17} /> : <Eye size={17} />}</button></span></label>;
 }
 
-type AuthMode = "login" | "register" | "forgot" | "reset";
+type AuthMode = "login" | "register" | "forgot";
 
 function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; demoEnabled: boolean }) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [resetToken, setResetToken] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
-    if (token) { setResetToken(token); setMode("reset"); return; }
-    if (params.get("error")) { setMode("forgot"); setError("Tautan reset tidak valid atau sudah kedaluwarsa. Minta tautan baru."); }
-  }, []);
 
   const switchMode = (nextMode: AuthMode) => {
     setMode(nextMode);
     setError("");
     setNotice("");
     setPassword("");
-    setConfirmPassword("");
   };
 
   const submit = async (event: React.FormEvent) => {
@@ -1185,25 +1258,20 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
     setError("");
     setNotice("");
     const normalizedEmail = email.trim().toLowerCase();
-    if (mode !== "reset" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) { setError("Masukkan alamat email yang valid."); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) { setError("Masukkan alamat email yang valid."); return; }
     if (mode !== "forgot" && password.length < 8) { setError("Password harus terdiri dari minimal 8 karakter."); return; }
     if (mode === "register" && name.trim().length < 2) { setError("Nama lengkap harus terdiri dari minimal 2 karakter."); return; }
-    if (mode === "reset" && password !== confirmPassword) { setError("Konfirmasi password belum sama."); return; }
     setLoading(true);
     try {
       if (mode === "forgot") {
-        const result = await authClient.requestPasswordReset({ email: normalizedEmail, redirectTo: `${window.location.origin}/?resetPassword=1` });
-        if (result.error) throw new Error(result.error.message || "Email reset belum dapat dikirim.");
-        setNotice("Jika email terdaftar, tautan reset password akan segera dikirim.");
-        return;
-      }
-      if (mode === "reset") {
-        if (!resetToken) throw new Error("Tautan reset tidak valid atau sudah kedaluwarsa.");
-        const result = await authClient.resetPassword({ newPassword: password, token: resetToken });
-        if (result.error) throw new Error(result.error.message || "Password belum dapat diubah.");
-        window.history.replaceState({}, "", window.location.pathname);
-        switchMode("login");
-        setNotice("Password berhasil diperbarui. Silakan masuk kembali.");
+        const response = await fetch("/api/password-recovery", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: normalizedEmail }),
+        });
+        const result = await response.json() as { message?: string; error?: string };
+        if (!response.ok) throw new Error(result.error || "Permintaan belum dapat dikirim.");
+        setNotice(result.message || "Jika email terdaftar, permintaan akan diteruskan kepada admin.");
         return;
       }
       const result = mode === "login"
@@ -1221,8 +1289,7 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
   const headings: Record<AuthMode, { title: string; description: string }> = {
     login: { title: "Selamat datang kembali.", description: "Masuk untuk melanjutkan pekerjaan tim riset." },
     register: { title: "Buat akun anggota.", description: "Gunakan email yang sudah diizinkan admin dan password minimal 8 karakter." },
-    forgot: { title: "Lupa password?", description: "Masukkan email akun Anda untuk menerima tautan reset." },
-    reset: { title: "Buat password baru.", description: "Gunakan minimal 8 karakter yang mudah Anda ingat dan sulit ditebak." },
+    forgot: { title: "Lupa password?", description: "Masukkan email akun Anda. Admin akan menerima permintaan dan memberikan password sementara secara manual." },
   };
 
   return (
@@ -1241,12 +1308,11 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
           <p className="mt-3 text-sm leading-6 text-[#6d767a]">{headings[mode].description}</p>
           <form onSubmit={submit} className="mt-8 space-y-4">
             {mode === "register" && <label className="block text-xs font-bold text-[#59656c]">Nama lengkap<Input value={name} onChange={(event) => setName(event.target.value)} className="mt-2" placeholder="Nama anggota tim" autoComplete="name" required /></label>}
-            {mode !== "reset" && <label className="block text-xs font-bold text-[#59656c]">Email<Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2" placeholder="nama@perusahaan.com" autoComplete="email" required /></label>}
+            <label className="block text-xs font-bold text-[#59656c]">Email<Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2" placeholder="nama@perusahaan.com" autoComplete="email" required /></label>
             {(mode === "login" || mode === "register") && <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Minimal 8 karakter" autoComplete={mode === "login" ? "current-password" : "new-password"} action={mode === "login" ? <button type="button" onClick={() => switchMode("forgot")} className="font-semibold text-[#e76f36] hover:underline">Lupa password?</button> : undefined} />}
-            {mode === "reset" && <><PasswordField label="Password baru" value={password} onChange={setPassword} placeholder="Minimal 8 karakter" autoComplete="new-password" /><PasswordField label="Ulangi password baru" value={confirmPassword} onChange={setConfirmPassword} placeholder="Ketik sekali lagi" autoComplete="new-password" /></>}
             {error && <div className="border-l-2 border-[#d8564e] bg-[#f9e8e5] px-3 py-2 text-xs text-[#a43d37]">{error}</div>}
             {notice && <div className="border-l-2 border-[#4f826c] bg-[#e5efe9] px-3 py-2 text-xs text-[#356450]">{notice}</div>}
-            <Button type="submit" className="mt-2 w-full" disabled={loading}>{loading ? <LoaderCircle size={17} className="animate-spin" /> : mode === "forgot" ? <MailPlus size={17} /> : mode === "reset" ? <Check size={17} /> : <LogIn size={17} />}{loading ? "Memproses..." : mode === "login" ? "Masuk ke workspace" : mode === "register" ? "Daftar dan masuk" : mode === "forgot" ? "Kirim tautan reset" : "Simpan password baru"}</Button>
+            <Button type="submit" className="mt-2 w-full" disabled={loading}>{loading ? <LoaderCircle size={17} className="animate-spin" /> : mode === "forgot" ? <MailPlus size={17} /> : <LogIn size={17} />}{loading ? "Memproses..." : mode === "login" ? "Masuk ke workspace" : mode === "register" ? "Daftar dan masuk" : "Kirim permintaan ke admin"}</Button>
           </form>
           {mode === "login" && demoEnabled && <><div className="my-5 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#9a9fa2]"><span className="h-px flex-1 bg-[#dedbd3]" />atau<span className="h-px flex-1 bg-[#dedbd3]" /></div><Button type="button" variant="outline" className="w-full" onClick={onEnterDemo}><LayoutDashboard size={17} /> Masuk mode demo</Button><p className="mt-2 text-center text-[11px] leading-5 text-[#8a9194]">Gunakan data mock untuk mengecek Dashboard dan Kanban tanpa backend.</p></>}
           {(mode === "login" || mode === "register") ? <div className="mt-6 border-t border-[#dedbd3] pt-5 text-center text-xs text-[#717a7e]">{mode === "login" ? "Belum memiliki akun?" : "Sudah memiliki akun?"} <button onClick={() => switchMode(mode === "login" ? "register" : "login")} className="font-bold text-[#e76f36] hover:underline">{mode === "login" ? "Daftar sekarang" : "Masuk di sini"}</button></div> : <div className="mt-6 border-t border-[#dedbd3] pt-5 text-center text-xs"><button onClick={() => switchMode("login")} className="font-bold text-[#e76f36] hover:underline">Kembali ke halaman masuk</button></div>}

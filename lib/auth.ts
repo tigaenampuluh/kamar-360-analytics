@@ -5,7 +5,6 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { authSchema, signupInvites } from "@/db/schema";
 import { getBootstrapAllowedEmails } from "@/lib/admin";
-import { sendPasswordResetEmail } from "@/lib/email";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -20,11 +19,6 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
-    revokeSessionsOnPasswordReset: true,
-    resetPasswordTokenExpiresIn: 60 * 60,
-    sendResetPassword: async ({ user, url }) => {
-      await sendPasswordResetEmail({ to: user.email, name: user.name, url });
-    },
   },
   session: {
     expiresIn: 60 * 60 * 24 * 7,

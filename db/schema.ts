@@ -156,6 +156,20 @@ export const signupInvites = pgTable("signup_invites", {
   index("idx_signup_invites_revoked_at").on(table.revokedAt),
 ]);
 
+export const passwordResetRequests = pgTable("password_reset_requests", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  resolvedBy: text("resolved_by").references(() => user.id, { onDelete: "set null" }),
+}, (table) => [
+  uniqueIndex("idx_password_reset_requests_pending_user")
+    .on(table.userId)
+    .where(sql`${table.resolvedAt} is null`),
+  index("idx_password_reset_requests_requested_at").on(table.requestedAt),
+]);
+
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
