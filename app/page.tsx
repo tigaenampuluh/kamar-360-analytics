@@ -1202,11 +1202,18 @@ function ActivityHistory() {
 
 type ProfileData = { name: string; email: string; role: string; image: string | null };
 
-function ProfilePage({ profile, onSave, onLogout }: { profile: ProfileData; onSave: (profile: ProfileData) => void | Promise<void>; onLogout: () => void }) {
+function ProfilePage({ profile, backendEnabled, onSave, onLogout }: { profile: ProfileData; backendEnabled: boolean; onSave: (profile: ProfileData) => void | Promise<void>; onLogout: () => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(profile);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [revokeOtherSessions, setRevokeOtherSessions] = useState(true);
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordNotice, setPasswordNotice] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { if (!editing) setDraft(profile); }, [profile, editing]);
   const initials = profile.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
@@ -1245,6 +1252,36 @@ function ProfilePage({ profile, onSave, onLogout }: { profile: ProfileData; onSa
       setSaving(false);
     }
   };
+  const changePassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasswordError("");
+    setPasswordNotice("");
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Konfirmasi password baru belum sama.");
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setPasswordError("Password baru harus berbeda dari password saat ini.");
+      return;
+    }
+    setPasswordSaving(true);
+    try {
+      const result = await authClient.changePassword({ currentPassword, newPassword, revokeOtherSessions });
+      if (result.error) {
+        if (result.error.code === "INVALID_PASSWORD") throw new Error("Password saat ini tidak sesuai.");
+        if (result.error.code === "PASSWORD_TOO_SHORT") throw new Error("Password baru minimal 8 karakter.");
+        throw new Error(result.error.message || "Password belum dapat diubah.");
+      }
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordNotice(revokeOtherSessions ? "Password berhasil diubah. Sesi pada perangkat lain telah dicabut." : "Password berhasil diubah.");
+    } catch (changeError) {
+      setPasswordError(changeError instanceof Error ? changeError.message : "Password belum dapat diubah.");
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
   return <div className="fade-up"><SectionHeading eyebrow="Account" title="Profil anggota" description="Kelola identitas yang tampil pada kolaborasi dan riwayat aktivitas workspace." />
     <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
       <aside className="bg-[#193246] p-6 text-white"><Avatar className="h-20 w-20 ring-4 ring-white/10">{previewImage && <AvatarImage src={previewImage} alt={`Foto ${profile.name}`} className="object-cover" />}<AvatarFallback className="bg-[#e76f36] font-serif text-2xl text-white">{initials}</AvatarFallback></Avatar><h2 className="mt-5 font-serif text-2xl font-semibold">{profile.name}</h2><p className="mt-1 text-sm text-[#a9b7c0]">{profile.email}</p><Badge className="mt-4 bg-white/10 text-[#d9e1e6]">{profile.role}</Badge><div className="mt-8 border-t border-white/10 pt-5"><div className="flex items-center gap-2 text-xs text-[#a9b7c0]"><ShieldCheck size={15} className="text-[#e9a17d]" />Akun anggota workspace</div><button onClick={onLogout} className="mt-5 text-xs font-semibold text-[#e9a17d] hover:text-white">Keluar dari workspace</button></div></aside>
@@ -1256,6 +1293,17 @@ function ProfilePage({ profile, onSave, onLogout }: { profile: ProfileData; onSa
         </div>
       </section>
     </div>
+    <section className="mt-6 bg-white p-6 md:p-8">
+      <div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#f7efdc] text-[#996c17]"><KeyRound size={18} /></span><div><h2 className="font-serif text-2xl font-semibold">Keamanan akun</h2><p className="mt-1 text-sm leading-6 text-[#747d81]">Ubah password secara mandiri dengan memverifikasi password yang sedang digunakan.</p></div></div>
+      {backendEnabled ? <form onSubmit={changePassword} className="mt-7 max-w-2xl space-y-5">
+        <PasswordField label="Password saat ini" value={currentPassword} onChange={setCurrentPassword} placeholder="Masukkan password saat ini" autoComplete="current-password" />
+        <div className="grid gap-5 sm:grid-cols-2"><PasswordField label="Password baru" value={newPassword} onChange={setNewPassword} placeholder="Minimal 8 karakter" autoComplete="new-password" /><PasswordField label="Konfirmasi password baru" value={confirmPassword} onChange={setConfirmPassword} placeholder="Ulangi password baru" autoComplete="new-password" /></div>
+        <label className="flex cursor-pointer items-start gap-3 border border-[#e3e0d8] bg-[#faf9f5] p-4"><input type="checkbox" checked={revokeOtherSessions} onChange={(event) => setRevokeOtherSessions(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[#e76f36]" /><span><span className="block text-sm font-semibold text-[#183044]">Keluar dari perangkat lain</span><span className="mt-1 block text-xs leading-5 text-[#7b8387]">Direkomendasikan agar sesi lama pada browser atau perangkat lain tidak tetap aktif.</span></span></label>
+        {passwordError && <div role="alert" className="border-l-2 border-[#d8564e] bg-[#f9e8e5] px-4 py-3 text-xs text-[#a43d37]">{passwordError}</div>}
+        {passwordNotice && <div role="status" aria-live="polite" className="border-l-2 border-[#4f826c] bg-[#e5efe9] px-4 py-3 text-xs font-semibold text-[#356450]"><span className="flex items-center gap-2"><Check size={15} />{passwordNotice}</span></div>}
+        <div className="flex justify-end"><Button type="submit" disabled={passwordSaving || currentPassword.length < 8 || newPassword.length < 8 || confirmPassword.length < 8}>{passwordSaving ? <LoaderCircle size={16} className="animate-spin" /> : <KeyRound size={16} />}{passwordSaving ? "Mengubah password..." : "Ubah password"}</Button></div>
+      </form> : <div className="mt-6 border-l-2 border-[#d29b32] bg-[#f7efdc] px-4 py-3 text-xs leading-5 text-[#77581e]">Fitur ubah password tersedia setelah masuk menggunakan akun workspace, bukan dalam mode demo.</div>}
+    </section>
   </div>;
 }
 
@@ -1607,7 +1655,7 @@ export default function Home() {
   else if (active === "library") page = <AssetLibrary backendEnabled={!!session} />;
   else if (active === "activity") page = <ActivityHistory />;
   else if (active === "admin" && isAdmin) page = <AdminMembersPage />;
-  else page = <ProfilePage profile={profile} onSave={saveProfile} onLogout={logout} />;
+  else page = <ProfilePage profile={profile} backendEnabled={!!session} onSave={saveProfile} onLogout={logout} />;
 
   return (
     <div className="min-h-screen bg-[#f5f3ed]">
