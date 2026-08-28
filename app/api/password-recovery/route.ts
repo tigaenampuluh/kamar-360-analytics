@@ -7,7 +7,7 @@ import { badRequest } from "@/lib/api";
 export const runtime = "nodejs";
 
 const requestSchema = z.object({ email: z.email().trim().toLowerCase() });
-const genericMessage = "Jika email terdaftar, permintaan akan diteruskan kepada admin.";
+const genericMessage = "Permintaan berhasil dikirim. Jika email terdaftar, admin akan menerima permintaan Anda dan menyiapkan password sementara.";
 
 export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));

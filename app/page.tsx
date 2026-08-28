@@ -52,6 +52,60 @@ type View = "dashboard" | "tracker" | "calendar" | "library" | "activity" | "adm
 type Status = "On Going" | "Delay" | "Pending" | "Revisi" | "Done";
 type Priority = "High" | "Medium" | "Low";
 
+const WIB_TIME_ZONE = "Asia/Jakarta";
+
+type WibDateParts = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+};
+
+const wibPartsFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: WIB_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
+function getWibDateParts(date: Date): WibDateParts {
+  const parts = Object.fromEntries(
+    wibPartsFormatter.formatToParts(date).map((part) => [part.type, part.value]),
+  );
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month) - 1,
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+    second: Number(parts.second),
+  };
+}
+
+function useWibClock(intervalMs = 1_000) {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    const tick = () => setNow(new Date());
+    tick();
+    const timer = window.setInterval(tick, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
+
+function greetingForWibHour(hour: number) {
+  if (hour >= 4 && hour < 11) return "Selamat pagi";
+  if (hour >= 11 && hour < 15) return "Selamat siang";
+  if (hour >= 15 && hour < 18) return "Selamat sore";
+  return "Selamat malam";
+}
+
 type Project = {
   id: number;
   title: string;
@@ -495,6 +549,7 @@ function DeadlineReminder({ items, onOpenCalendar }: { items: DeadlineReminderIt
 
 function Dashboard({ projects, goTo, backendEnabled }: { projects: Project[]; goTo: (v: View) => void; backendEnabled: boolean }) {
   const [recentActivities, setRecentActivities] = useState<RecentActivityItem[]>(backendEnabled ? [] : dashboardRecentActivities);
+  const wibClock = useWibClock();
   useEffect(() => {
     if (!backendEnabled) { setRecentActivities(dashboardRecentActivities); return; }
     const controller = new AbortController();
@@ -528,7 +583,7 @@ function Dashboard({ projects, goTo, backendEnabled }: { projects: Project[]; go
     return `${statusColors[status]} ${start}% ${chartPosition}%`;
   });
   const chartBackground = total > 0 ? `conic-gradient(${chartSegments.join(", ")})` : "#ebe9e3";
-  const today = new Date();
+  const today = wibClock || new Date();
   const nextWeek = new Date(today); nextWeek.setDate(today.getDate() + 7);
   const deadlineItems: DeadlineReminderItem[] = dashboardProjects
     .filter((project) => project.status !== "Done" && project.deadlineIso && new Date(project.deadlineIso) >= today && new Date(project.deadlineIso) <= nextWeek)
@@ -544,10 +599,14 @@ function Dashboard({ projects, goTo, backendEnabled }: { projects: Project[]; go
         type: "Deadline" as const,
       };
     });
-  const dateLabel = new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }).format(today);
+  const wibParts = getWibDateParts(today);
+  const greeting = wibClock ? greetingForWibHour(wibParts.hour) : "Selamat datang";
+  const dateLabel = wibClock
+    ? `${new Intl.DateTimeFormat("id-ID", { timeZone: WIB_TIME_ZONE, weekday: "long", day: "2-digit", month: "long", year: "numeric" }).format(today)} · ${new Intl.DateTimeFormat("id-ID", { timeZone: WIB_TIME_ZONE, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(today).replaceAll(".", ":")} WIB`
+    : "Memuat waktu Indonesia Barat…";
   return (
     <div className="fade-up">
-      <SectionHeading eyebrow={dateLabel} title="Selamat datang di 360 - Center of Research." description={attention.length > 0 ? `Ada ${attention.length} project yang perlu ditindaklanjuti.` : total > 0 ? "Semua project sedang berjalan tanpa tanda delay atau revisi." : "Belum ada project. Tambahkan project pertama untuk memulai."} action={<Button onClick={() => goTo("tracker")}><Plus size={17} /> Tambah project</Button>} />
+      <SectionHeading eyebrow={dateLabel} title={`${greeting}! Selamat datang di 360 - Center of Research.`} description={attention.length > 0 ? `Ada ${attention.length} project yang perlu ditindaklanjuti.` : total > 0 ? "Semua project sedang berjalan tanpa tanda delay atau revisi." : "Belum ada project. Tambahkan project pertama untuk memulai."} action={<Button onClick={() => goTo("tracker")}><Plus size={17} /> Tambah project</Button>} />
 
       <div className="grid gap-px overflow-hidden border border-[#ddd9d0] bg-[#ddd9d0] sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <StatCard label="Total project" value={String(total)} change={total > 0 ? "Data aktual" : "Belum ada project"} icon={FolderOpen} accent="#3578a8" />
@@ -809,11 +868,15 @@ function AgendaDialog({ open, agenda, projects, onOpenChange, onSave, onDelete }
 }
 
 function CalendarPlanner({ projects, backendEnabled }: { projects: Project[]; backendEnabled: boolean }) {
-  const [monthOffset, setMonthOffset] = useState(0);
-  const [selectedDay, setSelectedDay] = useState(26);
+  const initialWibDate = getWibDateParts(new Date());
+  const [viewMode, setViewMode] = useState<"month" | "year">("month");
+  const [period, setPeriod] = useState({ year: initialWibDate.year, month: initialWibDate.month });
+  const [selectedDay, setSelectedDay] = useState(initialWibDate.day);
   const [agendaRows, setAgendaRows] = useState<AgendaItem[]>(initialAgendas);
   const [agendaOpen, setAgendaOpen] = useState(false);
   const [selectedAgenda, setSelectedAgenda] = useState<AgendaItem | null>(null);
+  const wibClock = useWibClock(60_000);
+  const todayWib = getWibDateParts(wibClock || new Date());
   useEffect(() => {
     if (!backendEnabled) return;
     fetch("/api/agendas").then((response) => response.ok ? response.json() : Promise.reject()).then((payload: { data: AgendaItem[] }) => setAgendaRows(payload.data)).catch(() => undefined);
@@ -842,25 +905,56 @@ function CalendarPlanner({ projects, backendEnabled }: { projects: Project[]; ba
     setAgendaRows((current) => current.filter((agenda) => agenda.id !== id));
     setSelectedAgenda(null);
   };
-  const label = monthOffset === 0 ? "Agustus 2026" : monthOffset === 1 ? "September 2026" : "Juli 2026";
-  const startPad = monthOffset === 0 ? 5 : monthOffset === 1 ? 1 : 2;
-  const days = monthOffset === 0 ? 31 : monthOffset === 1 ? 30 : 31;
+  const label = viewMode === "year" ? String(period.year) : `${monthNames[period.month]} ${period.year}`;
+  const startPad = (new Date(period.year, period.month, 1).getDay() + 6) % 7;
+  const days = new Date(period.year, period.month + 1, 0).getDate();
   useEffect(() => { if (selectedDay > days) setSelectedDay(days); }, [days, selectedDay]);
-  const visibleMonth = 7 + monthOffset;
   const eventsByDay: Record<number, CalendarEvent[]> = {};
   const addEvent = (date: Date, event: CalendarEvent) => {
-    if (date.getFullYear() !== 2026 || date.getMonth() !== visibleMonth) return;
-    (eventsByDay[date.getDate()] ||= []).push(event);
+    const dateParts = getWibDateParts(date);
+    if (dateParts.year !== period.year || dateParts.month !== period.month) return;
+    (eventsByDay[dateParts.day] ||= []).push(event);
   };
   projects.forEach((project) => { if (project.deadlineIso) addEvent(new Date(project.deadlineIso), { label: project.title, type: "deadline" }); });
   agendaRows.forEach((agenda) => addEvent(new Date(agenda.startTime), { label: agenda.title, type: agenda.category.toLowerCase().includes("publikasi") ? "publish" : "meeting", agendaId: agenda.id }));
-  const selectedDate = new Date(2026, visibleMonth, selectedDay);
-  const selectedAgendas = agendaRows.filter((agenda) => new Date(agenda.startTime).getFullYear() === 2026 && new Date(agenda.startTime).getMonth() === visibleMonth && new Date(agenda.startTime).getDate() === selectedDay);
-  const selectedDateLabel = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long" }).format(selectedDate);
-  const selectedWeekday = new Intl.DateTimeFormat("id-ID", { weekday: "long" }).format(selectedDate);
+  const selectedDate = new Date(Date.UTC(period.year, period.month, selectedDay, 12));
+  const selectedAgendas = agendaRows.filter((agenda) => {
+    const dateParts = getWibDateParts(new Date(agenda.startTime));
+    return dateParts.year === period.year && dateParts.month === period.month && dateParts.day === selectedDay;
+  });
+  const selectedDateLabel = new Intl.DateTimeFormat("id-ID", { timeZone: WIB_TIME_ZONE, day: "numeric", month: "long", year: "numeric" }).format(selectedDate);
+  const selectedWeekday = new Intl.DateTimeFormat("id-ID", { timeZone: WIB_TIME_ZONE, weekday: "long" }).format(selectedDate);
+  const monthEventCounts = monthNames.map((_, month) => {
+    const projectCount = projects.filter((project) => project.deadlineIso && (() => {
+      const dateParts = getWibDateParts(new Date(project.deadlineIso));
+      return dateParts.year === period.year && dateParts.month === month;
+    })()).length;
+    const agendaCount = agendaRows.filter((agenda) => {
+      const dateParts = getWibDateParts(new Date(agenda.startTime));
+      return dateParts.year === period.year && dateParts.month === month;
+    }).length;
+    return projectCount + agendaCount;
+  });
+  const movePeriod = (step: number) => {
+    if (viewMode === "year") {
+      setPeriod((current) => ({ ...current, year: current.year + step }));
+      return;
+    }
+    setPeriod((current) => {
+      const next = new Date(current.year, current.month + step, 1);
+      return { year: next.getFullYear(), month: next.getMonth() };
+    });
+  };
+  const goToToday = () => {
+    const current = getWibDateParts(new Date());
+    setPeriod({ year: current.year, month: current.month });
+    setSelectedDay(current.day);
+    setViewMode("month");
+  };
   return <div className="fade-up"><SectionHeading eyebrow="Schedule" title="Calendar Planner" description="Satukan deadline project, agenda meeting, dan jadwal publikasi dalam satu kalender." action={<Button onClick={() => { setSelectedAgenda(null); setAgendaOpen(true); }}><Plus size={17} /> Tambah agenda</Button>} />
-    <div className="grid gap-6 xl:grid-cols-[1fr_290px]"><section className="bg-white p-4 md:p-6"><div className="mb-5 flex items-center justify-between"><div className="flex items-center gap-2"><button onClick={() => setMonthOffset(Math.max(-1, monthOffset - 1))} className="grid h-8 w-8 place-items-center rounded-md border border-[#dedbd3] hover:bg-[#f5f3ed]"><ChevronLeft size={16} /></button><button onClick={() => setMonthOffset(Math.min(1, monthOffset + 1))} className="grid h-8 w-8 place-items-center rounded-md border border-[#dedbd3] hover:bg-[#f5f3ed]"><ChevronRight size={16} /></button><h2 className="ml-2 font-serif text-xl font-semibold">{label}</h2></div><Button size="sm" variant="outline" onClick={() => { setMonthOffset(0); setSelectedDay(26); }}>Hari ini</Button></div><div className="grid grid-cols-7 border-l border-t border-[#e2dfd7]">{["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"].map((d) => <div key={d} className="border-b border-r border-[#e2dfd7] py-2 text-center text-[10px] font-bold uppercase tracking-widest text-[#8c9295]">{d}</div>)}{Array.from({ length: startPad }).map((_, i) => <div key={`p-${i}`} className="min-h-24 border-b border-r border-[#e2dfd7] bg-[#f8f7f3] md:min-h-28" />)}{Array.from({ length: days }).map((_, i) => { const day = i + 1; const dayEvents = eventsByDay[day] || []; const today = monthOffset === 0 && day === 26; const chosen = selectedDay === day; return <div key={day} className={cn("min-h-24 border-b border-r border-[#e2dfd7] p-1.5 md:min-h-28 md:p-2", today && "bg-[#fff8f4]")}><button aria-label={`Lihat agenda ${day} ${label}`} onClick={() => setSelectedDay(day)} className={cn("mb-1 grid h-6 w-6 place-items-center text-xs hover:bg-[#f0eee8]", chosen && "rounded-full bg-[#e76f36] font-bold text-white hover:bg-[#cf5d27]")}>{day}</button><div className="space-y-1">{dayEvents.slice(0, 2).map((event, index) => <button key={`${event.label}-${index}`} onClick={() => { setSelectedDay(day); if (!event.agendaId) return; setSelectedAgenda(agendaRows.find((agenda) => agenda.id === event.agendaId) || null); setAgendaOpen(true); }} className={cn("block w-full truncate border-l-2 px-1.5 py-1 text-left text-[9px] font-semibold md:text-[10px]", event.type === "deadline" ? "cursor-default border-[#d8564e] bg-[#f9e8e5] text-[#a43d37]" : event.type === "publish" ? "border-[#4f826c] bg-[#e5efe9] text-[#3f6f5b]" : "border-[#3578a8] bg-[#e6f0f7] text-[#28658f]")}>{event.label}</button>)}</div></div>; })}</div></section>
-    <aside className="space-y-4"><div className="bg-[#193246] p-5 text-white"><div className="text-[10px] font-bold uppercase tracking-[.18em] text-[#e9a17d]">Agenda tanggal</div><div className="mt-2 font-serif text-3xl font-semibold">{selectedDateLabel}</div><div className="mt-1 capitalize text-xs text-[#a9b7c0]">{selectedWeekday} · {selectedAgendas.length} agenda</div><div className="mt-6 space-y-4">{selectedAgendas.map((agenda) => <button key={agenda.id} onClick={() => { setSelectedAgenda(agenda); setAgendaOpen(true); }} className="block w-full border-l-2 border-[#6e9bc0] pl-3 text-left"><div className="text-sm font-semibold">{agenda.title}</div><div className="mt-1 text-[11px] text-[#a9b7c0]">{new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(agenda.startTime)).replace(":", ".")} · {agenda.pic}</div></button>)}{selectedAgendas.length === 0 && <p className="text-xs leading-5 text-[#a9b7c0]">Belum ada agenda pada tanggal ini.</p>}</div></div><div className="bg-white p-5"><h3 className="text-sm font-bold">Keterangan</h3><div className="mt-4 space-y-3 text-xs text-[#657177]"><div className="flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-full bg-[#d8564e]" />Deadline project</div><div className="flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-full bg-[#3578a8]" />Meeting / agenda</div><div className="flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-full bg-[#4f826c]" />Jadwal publikasi</div></div></div></aside></div>
+    <div className="grid gap-6 xl:grid-cols-[1fr_290px]"><section className="bg-white p-4 md:p-6"><div className="mb-5 flex flex-wrap items-center gap-3"><div className="flex items-center gap-2"><button type="button" aria-label={viewMode === "year" ? "Tahun sebelumnya" : "Bulan sebelumnya"} onClick={() => movePeriod(-1)} className="grid h-8 w-8 place-items-center rounded-md border border-[#dedbd3] hover:bg-[#f5f3ed]"><ChevronLeft size={16} /></button><button type="button" aria-label={viewMode === "year" ? "Tahun berikutnya" : "Bulan berikutnya"} onClick={() => movePeriod(1)} className="grid h-8 w-8 place-items-center rounded-md border border-[#dedbd3] hover:bg-[#f5f3ed]"><ChevronRight size={16} /></button><h2 className="ml-2 min-w-36 font-serif text-xl font-semibold">{label}</h2></div><div role="group" aria-label="Tampilan kalender" className="ml-auto inline-flex rounded-md border border-[#d9d7cf] bg-white p-1"><button type="button" aria-pressed={viewMode === "month"} onClick={() => setViewMode("month")} className={cn("rounded px-3 py-1.5 text-xs font-bold", viewMode === "month" ? "bg-[#193246] text-white" : "text-[#667278] hover:bg-[#f3f1eb]")}>Bulanan</button><button type="button" aria-pressed={viewMode === "year"} onClick={() => setViewMode("year")} className={cn("rounded px-3 py-1.5 text-xs font-bold", viewMode === "year" ? "bg-[#193246] text-white" : "text-[#667278] hover:bg-[#f3f1eb]")}>Tahunan</button></div><Button type="button" size="sm" variant="outline" onClick={goToToday}>Hari ini</Button></div>
+      {viewMode === "month" ? <div className="grid grid-cols-7 border-l border-t border-[#e2dfd7]">{["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"].map((d) => <div key={d} className="border-b border-r border-[#e2dfd7] py-2 text-center text-[10px] font-bold uppercase tracking-widest text-[#8c9295]">{d}</div>)}{Array.from({ length: startPad }).map((_, i) => <div key={`p-${i}`} className="min-h-24 border-b border-r border-[#e2dfd7] bg-[#f8f7f3] md:min-h-28" />)}{Array.from({ length: days }).map((_, i) => { const day = i + 1; const dayEvents = eventsByDay[day] || []; const isToday = period.year === todayWib.year && period.month === todayWib.month && day === todayWib.day; const chosen = selectedDay === day; return <div key={day} className={cn("min-h-24 border-b border-r border-[#e2dfd7] p-1.5 md:min-h-28 md:p-2", isToday && "bg-[#fff8f4]")}><button aria-current={isToday ? "date" : undefined} aria-label={`Lihat agenda ${day} ${label}${isToday ? ", hari ini" : ""}`} onClick={() => setSelectedDay(day)} className={cn("mb-1 grid h-6 w-6 place-items-center text-xs hover:bg-[#f0eee8]", chosen && "rounded-full bg-[#e76f36] font-bold text-white hover:bg-[#cf5d27]")}>{day}</button><div className="space-y-1">{dayEvents.slice(0, 2).map((event, index) => <button key={`${event.label}-${index}`} onClick={() => { setSelectedDay(day); if (!event.agendaId) return; setSelectedAgenda(agendaRows.find((agenda) => agenda.id === event.agendaId) || null); setAgendaOpen(true); }} className={cn("block w-full truncate border-l-2 px-1.5 py-1 text-left text-[9px] font-semibold md:text-[10px]", event.type === "deadline" ? "cursor-default border-[#d8564e] bg-[#f9e8e5] text-[#a43d37]" : event.type === "publish" ? "border-[#4f826c] bg-[#e5efe9] text-[#3f6f5b]" : "border-[#3578a8] bg-[#e6f0f7] text-[#28658f]")}>{event.label}</button>)}</div></div>; })}</div> : <div aria-label={`Ringkasan kalender tahun ${period.year}`} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{monthNames.map((monthName, month) => { const isCurrentMonth = period.year === todayWib.year && month === todayWib.month; return <button type="button" key={monthName} onClick={() => { setPeriod((current) => ({ ...current, month })); setSelectedDay(isCurrentMonth ? todayWib.day : 1); setViewMode("month"); }} className={cn("border border-[#e2dfd7] p-4 text-left transition hover:border-[#e76f36] hover:bg-[#fff8f4]", isCurrentMonth && "border-[#e9a17d] bg-[#fff8f4]")}><div className="flex items-center justify-between"><span className="font-serif text-lg font-semibold">{monthName}</span>{isCurrentMonth && <Badge className="bg-[#f7e2d5] text-[#b9572c]">Bulan ini</Badge>}</div><div className="mt-5 text-2xl font-semibold text-[#193246]">{monthEventCounts[month]}</div><div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-[#8a9194]">agenda & deadline</div></button>; })}</div>}</section>
+    <aside className="space-y-4"><div className="bg-[#193246] p-5 text-white"><div className="text-[10px] font-bold uppercase tracking-[.18em] text-[#e9a17d]">Agenda tanggal</div><div className="mt-2 font-serif text-3xl font-semibold">{selectedDateLabel}</div><div className="mt-1 capitalize text-xs text-[#a9b7c0]">{selectedWeekday} · {selectedAgendas.length} agenda</div><div className="mt-6 space-y-4">{selectedAgendas.map((agenda) => <button key={agenda.id} onClick={() => { setSelectedAgenda(agenda); setAgendaOpen(true); }} className="block w-full border-l-2 border-[#6e9bc0] pl-3 text-left"><div className="text-sm font-semibold">{agenda.title}</div><div className="mt-1 text-[11px] text-[#a9b7c0]">{new Intl.DateTimeFormat("id-ID", { timeZone: WIB_TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(agenda.startTime)).replace(":", ".")} · {agenda.pic}</div></button>)}{selectedAgendas.length === 0 && <p className="text-xs leading-5 text-[#a9b7c0]">Belum ada agenda pada tanggal ini.</p>}</div></div><div className="bg-white p-5"><h3 className="text-sm font-bold">Keterangan</h3><div className="mt-4 space-y-3 text-xs text-[#657177]"><div className="flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-full bg-[#d8564e]" />Deadline project</div><div className="flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-full bg-[#3578a8]" />Meeting / agenda</div><div className="flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-full bg-[#4f826c]" />Jadwal publikasi</div></div></div></aside></div>
     <AgendaDialog open={agendaOpen} agenda={selectedAgenda} projects={projects} onOpenChange={setAgendaOpen} onSave={(agenda) => { void saveAgenda(agenda); }} onDelete={(id) => { void deleteAgenda(id); }} />
   </div>;
 }
@@ -1335,7 +1429,7 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
         });
         const result = await response.json() as { message?: string; error?: string };
         if (!response.ok) throw new Error(result.error || "Permintaan belum dapat dikirim.");
-        setNotice(result.message || "Jika email terdaftar, permintaan akan diteruskan kepada admin.");
+        setNotice(result.message || "Permintaan berhasil dikirim. Jika email terdaftar, admin akan menerima permintaan Anda.");
         return;
       }
       const result = mode === "login"
@@ -1375,7 +1469,7 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
             <label className="block text-xs font-bold text-[#59656c]">Email<Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2" placeholder="nama@perusahaan.com" autoComplete="email" required /></label>
             {(mode === "login" || mode === "register") && <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Minimal 8 karakter" autoComplete={mode === "login" ? "current-password" : "new-password"} action={mode === "login" ? <button type="button" onClick={() => switchMode("forgot")} className="font-semibold text-[#e76f36] hover:underline">Lupa password?</button> : undefined} />}
             {error && <div className="border-l-2 border-[#d8564e] bg-[#f9e8e5] px-3 py-2 text-xs text-[#a43d37]">{error}</div>}
-            {notice && <div className="border-l-2 border-[#4f826c] bg-[#e5efe9] px-3 py-2 text-xs text-[#356450]">{notice}</div>}
+            {notice && <div role="status" aria-live="polite" data-testid="password-recovery-success" className="border-l-2 border-[#4f826c] bg-[#e5efe9] px-4 py-3 text-xs text-[#356450]"><div className="flex items-center gap-2 font-bold"><Check size={16} />Permintaan berhasil dikirim</div><p className="mt-1.5 leading-5">{notice}</p></div>}
             <Button type="submit" className="mt-2 w-full" disabled={loading}>{loading ? <LoaderCircle size={17} className="animate-spin" /> : mode === "forgot" ? <MailPlus size={17} /> : <LogIn size={17} />}{loading ? "Memproses..." : mode === "login" ? "Masuk ke workspace" : mode === "register" ? "Daftar dan masuk" : "Kirim permintaan ke admin"}</Button>
           </form>
           {mode === "login" && demoEnabled && <><div className="my-5 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#9a9fa2]"><span className="h-px flex-1 bg-[#dedbd3]" />atau<span className="h-px flex-1 bg-[#dedbd3]" /></div><Button type="button" variant="outline" className="w-full" onClick={onEnterDemo}><LayoutDashboard size={17} /> Masuk mode demo</Button><p className="mt-2 text-center text-[11px] leading-5 text-[#8a9194]">Gunakan data mock untuk mengecek Dashboard dan Kanban tanpa backend.</p></>}
