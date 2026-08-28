@@ -50,6 +50,13 @@
       "when": 1787923188066,
       "tag": "0006_wild_nemesis",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787939528351,
+      "tag": "0007_lazy_marvel_boy",
+      "breakpoints": true
     }
   ]
 }

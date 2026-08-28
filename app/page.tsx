@@ -15,6 +15,7 @@ import {
   CircleAlert,
   Clock3,
   Copy,
+  Download,
   ExternalLink,
   Eye,
   EyeOff,
@@ -33,6 +34,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   Plus,
+  RotateCcw,
   Search,
   Send,
   ShieldCheck,
@@ -257,6 +259,7 @@ function greetingForWibHour(hour: number) {
 
 type Project = {
   id: number;
+  version?: number;
   title: string;
   status: Status;
   priority: Priority;
@@ -360,6 +363,7 @@ function toProjectPayload(project: Project) {
     workingDocLink: project.workingDocLink || null,
     primaryPicUserId: project.primaryPicUserId ?? null,
     memberAssignments: (project.members ?? []).map((member) => ({ userId: member.userId, role: member.role })),
+    expectedVersion: project.version,
   };
 }
 
@@ -1134,11 +1138,51 @@ function ProjectDetail({ project, open, backendEnabled, fallbackPermissions, onO
     <div className="flex flex-col gap-2 border-t border-[#e5e2da] pt-4 sm:flex-row"><Button className="flex-1" disabled={!project.workingDocLink} onClick={() => project.workingDocLink && window.open(project.workingDocLink, "_blank", "noopener,noreferrer")}><FileText size={16} /> Buka working document</Button>{detail.permissions.canEdit && !project.archivedAt && <Button variant="outline" onClick={onEdit}><MoreHorizontal size={16} /> Edit</Button>}{detail.permissions.canEdit && <Button variant="outline" onClick={onArchive}><Archive size={16} />{project.archivedAt ? "Pulihkan" : "Arsipkan"}</Button>}{detail.permissions.canDelete && <Button variant="outline" className="border-[#e2b9b5] text-[#b9433d] hover:bg-[#f9e8e5]" onClick={onDelete}><Trash2 size={16} /> Hapus</Button>}</div></DialogContent></Dialog>;
 }
 
-function ProjectCard({ project, canDrag, onClick }: { project: Project; canDrag: boolean; onClick: () => void }) {
+function ProjectQuickEditDialog({ project, open, workspaceMembers, canEdit, canRequestCompletion, busy, onOpenChange, onSave }: { project: Project | null; open: boolean; workspaceMembers: WorkspaceMemberOption[]; canEdit: boolean; canRequestCompletion: boolean; busy: boolean; onOpenChange: (open: boolean) => void; onSave: (project: Project) => void }) {
+  const [draft, setDraft] = useState<Project | null>(project);
+  const [manualPic, setManualPic] = useState("");
+  useEffect(() => {
+    if (!project || !open) return;
+    setDraft(project);
+    setManualPic(project.primaryPicUserId ? "" : project.pic);
+  }, [open, project]);
+  if (!draft) return null;
+  const update = <K extends keyof Project>(key: K, value: Project[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
+  const dateValue = draft.deadlineIso?.slice(0, 10) || "";
+  const picValue = draft.primaryPicUserId || "manual";
+  const choosePic = (value: string) => {
+    if (value === "manual") {
+      update("primaryPicUserId", null);
+      if (manualPic.trim()) {
+        update("pic", manualPic.trim());
+        update("initials", memberInitials(manualPic));
+      }
+      return;
+    }
+    const member = workspaceMembers.find((candidate) => candidate.id === value);
+    if (!member) return;
+    setDraft((current) => current ? { ...current, primaryPicUserId: member.id, pic: member.name, initials: memberInitials(member.name) } : current);
+  };
+  const submit = () => {
+    const normalizedPic = draft.primaryPicUserId ? draft.pic : manualPic.trim();
+    if (!normalizedPic || !draft.deadlineIso) return;
+    onSave({ ...draft, pic: normalizedPic, initials: memberInitials(normalizedPic) });
+  };
+  return <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}><DialogContent><DialogHeader><DialogTitle>Pindahkan status & edit cepat</DialogTitle><DialogDescription>Perbarui informasi utama tanpa membuka form project lengkap.</DialogDescription></DialogHeader><div className="space-y-4">
+    <label className="block text-xs font-bold text-[#59656c]">Status<select value={draft.status} onChange={(event) => update("status", event.target.value as Status)} className="mt-2 h-11 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal" disabled={!canEdit && !canRequestCompletion}>{(Object.keys(statusMeta) as Status[]).filter((status) => canEdit || status === draft.status || status === "Done").map((status) => <option key={status} value={status}>{status === "Done" && !canEdit ? "Done — minta approval" : status}</option>)}</select></label>
+    <div className="grid gap-4 sm:grid-cols-2"><label className="text-xs font-bold text-[#59656c]">PIC<select value={picValue} onChange={(event) => choosePic(event.target.value)} className="mt-2 h-11 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal" disabled={!canEdit}>{workspaceMembers.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}<option value="manual">Lainnya (manual)</option></select></label><label className="text-xs font-bold text-[#59656c]">Deadline<Input type="date" value={dateValue} onChange={(event) => update("deadlineIso", `${event.target.value}T17:00:00+07:00`)} className="mt-2 font-normal" disabled={!canEdit} /></label></div>
+    {!draft.primaryPicUserId && <label className="block text-xs font-bold text-[#59656c]">Nama PIC manual<Input value={manualPic} onChange={(event) => { setManualPic(event.target.value); update("pic", event.target.value); }} className="mt-2 font-normal" disabled={!canEdit} /></label>}
+    <label className="block text-xs font-bold text-[#59656c]">Prioritas<select value={draft.priority} onChange={(event) => update("priority", event.target.value as Priority)} className="mt-2 h-11 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal" disabled={!canEdit}><option>High</option><option>Medium</option><option>Low</option></select></label>
+    {!canEdit && canRequestCompletion && <p className="bg-[#fff7e6] px-3 py-2 text-xs leading-5 text-[#7b5a1b]">Anda dapat meminta approval untuk memindahkan project ke Done. Field lainnya hanya dapat diubah oleh Lead atau Admin.</p>}
+    <div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>Batal</Button><Button onClick={submit} disabled={busy || (!canEdit && draft.status !== "Done")}>{busy ? <LoaderCircle size={15} className="animate-spin" /> : <Check size={15} />}{!canEdit && draft.status === "Done" ? "Minta approval" : "Simpan perubahan"}</Button></div>
+  </div></DialogContent></Dialog>;
+}
+
+function ProjectCard({ project, canDrag, canQuickEdit, onClick, onQuickEdit }: { project: Project; canDrag: boolean; canQuickEdit: boolean; onClick: () => void; onQuickEdit: () => void }) {
   return (
     <article draggable={canDrag} onDragStart={(e) => { if (canDrag) e.dataTransfer.setData("projectId", String(project.id)); }} onClick={onClick} className={cn("group border border-[#e1ded5] bg-white p-2.5 shadow-[0_1px_1px_rgba(24,48,68,.04)] transition hover:-translate-y-0.5 hover:border-[#c9c5ba] hover:shadow-[0_5px_16px_rgba(24,48,68,.08)]", canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer")}>
-      <div className="flex items-start gap-1.5"><GripVertical size={12} className="mt-0.5 hidden shrink-0 text-[#c0c2c1] opacity-0 transition group-hover:opacity-100 2xl:block" /><div className="min-w-0 flex-1"><div className="line-clamp-2 text-xs font-semibold leading-[1.15rem] text-[#20394b]">{project.title}</div><div className="mt-1 truncate text-[10px] text-[#8a9194]">{project.category}</div></div><button className="shrink-0 text-[#abb0b2]" onClick={(e) => e.stopPropagation()}><MoreHorizontal size={14} /></button></div>
-      <div className="mt-2.5 border-t border-[#efede7] pt-2.5"><div className="flex items-center justify-between gap-1"><div className="flex items-center">{(project.members ?? []).slice(0, 3).map((member, index) => <span key={member.userId} className={index ? "-ml-2" : ""} title={`${member.name} · ${member.role}`}><MiniAvatar initials={memberInitials(member.name)} image={member.image} name={member.name} className="h-6 w-6 ring-white" /></span>)}{(project.members?.length ?? 0) === 0 && <MiniAvatar initials={project.initials} className="h-6 w-6" />}{(project.members?.length ?? 0) > 3 && <span className="ml-1 text-[9px] text-[#7f888d]">+{project.members!.length - 3}</span>}</div><Badge className={cn("shrink-0 px-1.5 py-0.5 text-[9px]", priorityMeta[project.priority])}>{project.priority}</Badge></div><div className={cn("mt-2 flex items-center gap-1 text-[9px]", project.status === "Delay" ? "font-bold text-[#b9433d]" : "text-[#7f888d]")}>{project.status === "Delay" ? <CircleAlert size={10} /> : <Clock3 size={10} />}<span className="truncate">{project.status === "Delay" ? "Terlambat · " : "Deadline · "}{project.deadline}</span></div></div>
+      <div className="flex items-start gap-1.5"><GripVertical size={12} className="mt-0.5 hidden shrink-0 text-[#c0c2c1] opacity-0 transition group-hover:opacity-100 2xl:block" /><div className="min-w-0 flex-1"><div className="line-clamp-2 text-xs font-semibold leading-[1.15rem] text-[#20394b]">{project.title}</div><div className="mt-1 truncate text-[10px] text-[#8a9194]">{project.category}</div></div>{canQuickEdit && <button type="button" aria-label={`Edit cepat ${project.title}`} className="hidden h-7 w-7 shrink-0 place-items-center rounded text-[#899195] hover:bg-[#f2f0ea] hover:text-[#20394b] sm:grid" onClick={(event) => { event.stopPropagation(); onQuickEdit(); }}><MoreHorizontal size={15} /></button>}</div>
+      <div className="mt-2.5 border-t border-[#efede7] pt-2.5"><div className="flex items-center justify-between gap-1"><div className="flex items-center">{(project.members ?? []).slice(0, 3).map((member, index) => <span key={member.userId} className={index ? "-ml-2" : ""} title={`${member.name} · ${member.role}`}><MiniAvatar initials={memberInitials(member.name)} image={member.image} name={member.name} className="h-6 w-6 ring-white" /></span>)}{(project.members?.length ?? 0) === 0 && <MiniAvatar initials={project.initials} className="h-6 w-6" />}{(project.members?.length ?? 0) > 3 && <span className="ml-1 text-[9px] text-[#7f888d]">+{project.members!.length - 3}</span>}</div><Badge className={cn("shrink-0 px-1.5 py-0.5 text-[9px]", priorityMeta[project.priority])}>{project.priority}</Badge></div><div className={cn("mt-2 flex items-center gap-1 text-[9px]", project.status === "Delay" ? "font-bold text-[#b9433d]" : "text-[#7f888d]")}>{project.status === "Delay" ? <CircleAlert size={10} /> : <Clock3 size={10} />}<span className="truncate">{project.status === "Delay" ? "Terlambat · " : "Deadline · "}{project.deadline}</span></div>{canQuickEdit && <button type="button" className="mt-2 flex min-h-11 w-full items-center justify-center gap-1.5 border border-[#ddd9cf] bg-[#faf9f5] px-2 text-[10px] font-bold text-[#445965] hover:border-[#c7c2b7] hover:bg-white sm:hidden" onClick={(event) => { event.stopPropagation(); onQuickEdit(); }}><MoreHorizontal size={14} /> Pindahkan status / edit cepat</button>}</div>
     </article>
   );
 }
@@ -1173,7 +1217,23 @@ function ProjectTracker({ projects, setProjects, backendEnabled, profile, isAdmi
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberOption[]>([]);
   const [showArchived, setShowArchived] = useState(false);
   const [archivedProjects, setArchivedProjects] = useState<Project[]>([]);
+  const [quickEditing, setQuickEditing] = useState<Project | null>(null);
+  const [quickEditBusy, setQuickEditBusy] = useState(false);
+  const [touchKanban, setTouchKanban] = useState(false);
+  const [undoChange, setUndoChange] = useState<{ previous: Project; current: Project; message: string } | null>(null);
   const boardProjects = showArchived ? archivedProjects : projects;
+  useEffect(() => {
+    const media = window.matchMedia("(pointer: coarse)");
+    const update = () => setTouchKanban(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    if (!undoChange) return;
+    const timer = window.setTimeout(() => setUndoChange(null), 7_000);
+    return () => window.clearTimeout(timer);
+  }, [undoChange]);
   useEffect(() => {
     if (!backendEnabled) {
       const names = Array.from(new Set([profile.name, ...projects.map((project) => project.pic)]));
@@ -1242,23 +1302,75 @@ function ProjectTracker({ projects, setProjects, backendEnabled, profile, isAdmi
       setProjectError("Project belum dapat disimpan. Silakan periksa koneksi lalu coba lagi.");
     }
   };
-  const saveProject = async (project: Project) => {
-    if (!backendEnabled) {
-      setProjects((current) => current.map((item) => item.id === project.id ? project : item));
-      setSelected(project);
-      return;
+  const replaceProject = useCallback((project: Project) => {
+    setProjects((current) => current.map((item) => item.id === project.id ? project : item));
+    setSelected((current) => current?.id === project.id ? project : current);
+  }, [setProjects]);
+  const loadLatestProject = async (id: number, payload?: { data?: ApiProject; current?: ApiProject; latest?: ApiProject }) => {
+    const embedded = payload?.data || payload?.current || payload?.latest;
+    if (embedded) return fromApiProject(embedded);
+    try {
+      const response = await fetch(`/api/projects/${id}`, { cache: "no-store" });
+      if (!response.ok) return null;
+      const latestPayload = await response.json() as { data?: ApiProject };
+      return latestPayload.data ? fromApiProject(latestPayload.data) : null;
+    } catch {
+      return null;
     }
-    const response = await fetch(`/api/projects/${project.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toProjectPayload(project)) });
-    if (!response.ok) return;
-    const payload = await response.json() as { data: ApiProject };
-    const saved = fromApiProject(payload.data);
-    setProjects((current) => current.map((item) => item.id === saved.id ? saved : item));
-    setSelected(saved);
+  };
+  const patchProject = async (previous: Project, next: Project, message: string, allowUndo = true) => {
+    const displayDeadline = next.deadlineIso ? new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short" }).format(new Date(next.deadlineIso)).replace(".", "") : next.deadline;
+    const optimistic = { ...next, deadline: displayDeadline };
+    setProjectError("");
+    replaceProject(optimistic);
+    if (!backendEnabled) {
+      if (allowUndo) setUndoChange({ previous, current: optimistic, message });
+      return true;
+    }
+    try {
+      const response = await fetch(`/api/projects/${next.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toProjectPayload(next)) });
+      const payload = await response.json() as { data?: ApiProject; current?: ApiProject; latest?: ApiProject; error?: string };
+      if (response.status === 409) {
+        const latest = await loadLatestProject(next.id, payload);
+        if (latest) replaceProject(latest); else replaceProject(previous);
+        setProjectError("Project telah diperbarui oleh anggota lain. Data terbaru sudah dimuat; silakan periksa lalu ulangi perubahan.");
+        return false;
+      }
+      if (!response.ok || !payload.data) throw new Error(payload.error || "Perubahan project gagal disimpan");
+      const saved = fromApiProject(payload.data);
+      replaceProject(saved);
+      if (allowUndo) setUndoChange({ previous, current: saved, message });
+      return true;
+    } catch (error) {
+      replaceProject(previous);
+      setProjectError(error instanceof Error ? error.message : "Perubahan project gagal disimpan.");
+      return false;
+    }
+  };
+  const undoProjectChange = async () => {
+    const change = undoChange;
+    if (!change) return;
+    setUndoChange(null);
+    const rollback = { ...change.previous, version: change.current.version };
+    const restored = await patchProject(change.current, rollback, "Perubahan dibatalkan", false);
+    if (restored) setProjectError("Perubahan berhasil dibatalkan.");
+  };
+  const saveProject = async (project: Project) => {
+    const previous = projects.find((item) => item.id === project.id);
+    if (!previous) return;
+    await patchProject(previous, project, "Project berhasil diperbarui.");
   };
   const deleteProject = async (project: Project) => {
     if (backendEnabled) {
-      const response = await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
-      if (!response.ok) return;
+      const response = await fetch(`/api/projects/${project.id}`, { method: "DELETE", headers: { "If-Match": String(project.version ?? "") } });
+      if (response.status === 409) {
+        const payload = await response.json() as { data?: ApiProject; error?: string };
+        if (payload.data) replaceProject(fromApiProject(payload.data));
+        setDeleting(false);
+        setProjectError(payload.error || "Project telah berubah dan belum dihapus. Data terbaru sudah dimuat.");
+        return;
+      }
+      if (!response.ok) { setProjectError("Project belum dapat dihapus."); return; }
     }
     setProjects((current) => current.filter((item) => item.id !== project.id));
     setDeleting(false);
@@ -1272,7 +1384,18 @@ function ProjectTracker({ projects, setProjects, backendEnabled, profile, isAdmi
       else { setProjects((current) => current.filter((item) => item.id !== project.id)); setArchivedProjects((current) => [{ ...project, archivedAt: new Date().toISOString() }, ...current]); }
       setSelected(null); return;
     }
-    const response = await fetch(`/api/projects/${project.id}/archive`, { method: restoring ? "DELETE" : "POST" });
+    const response = await fetch(`/api/projects/${project.id}/archive`, { method: restoring ? "DELETE" : "POST", headers: { "If-Match": String(project.version ?? "") } });
+    if (response.status === 409) {
+      const conflict = await response.json() as { data?: ApiProject; error?: string };
+      if (conflict.data) {
+        const latest = fromApiProject({ ...conflict.data, members: project.members });
+        if (restoring) setArchivedProjects((current) => current.map((item) => item.id === latest.id ? latest : item));
+        else replaceProject(latest);
+        setSelected(latest);
+      }
+      setProjectError(conflict.error || "Project telah berubah. Status arsip belum diubah.");
+      return;
+    }
     if (!response.ok) { setProjectError("Status arsip belum dapat diperbarui."); return; }
     const payload = await response.json() as { data: ApiProject };
     const updated = fromApiProject({ ...payload.data, members: project.members });
@@ -1280,43 +1403,71 @@ function ProjectTracker({ projects, setProjects, backendEnabled, profile, isAdmi
     else { setProjects((current) => current.filter((item) => item.id !== project.id)); setArchivedProjects((current) => [updated, ...current]); }
     setSelected(null);
   };
+  const requestDoneApproval = async (project: Project) => {
+    if (!backendEnabled) { setProjectError("Mode demo: permintaan approval Done disimulasikan."); return true; }
+    try {
+      const response = await fetch(`/api/projects/${project.id}/approval`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note: "Diajukan melalui Kanban" }) });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Permintaan approval gagal");
+      setProjectError("Permintaan pindah ke Done sudah dikirim ke Lead/Admin.");
+      return true;
+    } catch (error) {
+      setProjectError(error instanceof Error ? error.message : "Permintaan approval gagal.");
+      return false;
+    }
+  };
+  const changeProjectStatus = async (project: Project, status: Status) => {
+    if (project.status === status) return true;
+    const permissions = permissionsFor(project);
+    if (!permissions.canEdit) {
+      if (status === "Done" && permissions.canRequestCompletion) return requestDoneApproval(project);
+      setProjectError("Role Anda tidak memiliki izin untuk mengubah status project ini.");
+      return false;
+    }
+    const changed = { ...project, status, completedAtIso: status === "Done" ? project.completedAtIso || new Date().toISOString() : undefined };
+    return patchProject(project, changed, `${project.title} dipindahkan ke ${status}.`);
+  };
+  const saveQuickEdit = async (project: Project) => {
+    const previous = projects.find((item) => item.id === project.id);
+    if (!previous) return;
+    const permissions = permissionsFor(previous);
+    setQuickEditBusy(true);
+    try {
+      if (!permissions.canEdit) {
+        if (project.status === "Done" && permissions.canRequestCompletion) {
+          const requested = await requestDoneApproval(previous);
+          if (requested) setQuickEditing(null);
+        } else setProjectError("Role Anda tidak memiliki izin untuk mengubah project ini.");
+        return;
+      }
+      const changed = { ...project, completedAtIso: project.status === "Done" ? project.completedAtIso || new Date().toISOString() : undefined };
+      const saved = await patchProject(previous, changed, `${project.title} berhasil diperbarui.`);
+      if (saved) setQuickEditing(null);
+    } finally {
+      setQuickEditBusy(false);
+    }
+  };
   const drop = (event: React.DragEvent, status: Status) => {
     event.preventDefault();
     const id = Number(event.dataTransfer.getData("projectId"));
     if (!id) return;
-    const previous = projects.find((project) => project.id === id);
-    if (!previous || previous.status === status) return;
-    const permissions = permissionsFor(previous);
-    if (!permissions.canEdit) {
-      if (status === "Done" && permissions.role === "Anggota") {
-        if (!backendEnabled) { setProjectError("Mode demo: permintaan approval Done disimulasikan."); return; }
-        void fetch(`/api/projects/${id}/approval`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note: "Diajukan melalui Kanban" }) })
-          .then(async (response) => { const payload = await response.json() as { error?: string }; if (!response.ok) throw new Error(payload.error || "Permintaan approval gagal"); setProjectError("Permintaan pindah ke Done sudah dikirim ke Lead/Admin."); })
-          .catch((error: unknown) => setProjectError(error instanceof Error ? error.message : "Permintaan approval gagal."));
-        return;
-      }
-      setProjectError("Role Anda tidak memiliki izin untuk mengubah status project ini.");
-      return;
-    }
-    const changed = { ...previous, status, completedAtIso: status === "Done" ? previous.completedAtIso || new Date().toISOString() : undefined };
-    setProjects((current) => current.map((project) => project.id === id ? changed : project));
-    if (backendEnabled) void fetch(`/api/projects/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) })
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to update status")))
-      .then((payload: { data: ApiProject }) => setProjects((current) => current.map((project) => project.id === id ? fromApiProject(payload.data) : project)))
-      .catch(() => setProjects((current) => current.map((project) => project.id === id ? previous : project)));
+    const project = projects.find((item) => item.id === id);
+    if (project) void changeProjectStatus(project, status);
   };
   return <div className="fade-up">
-    <SectionHeading eyebrow="Track" title={showArchived ? "Arsip Project" : "Project Tracker"} description={showArchived ? "Project yang selesai disimpan tanpa menghapus riwayat, komentar, maupun asetnya." : "Pantau seluruh alur kerja tim. Tarik kartu untuk memperbarui status project secara langsung."} action={<div className="flex gap-2"><Button variant="outline" onClick={() => { setShowArchived((current) => !current); setSelected(null); }}><Archive size={17} />{showArchived ? "Kembali ke board" : "Buka arsip"}</Button>{!showArchived && <Button onClick={() => setAdding(true)}><Plus size={17} /> Tambah project</Button>}</div>} />
+    <SectionHeading eyebrow="Track" title={showArchived ? "Arsip Project" : "Project Tracker"} description={showArchived ? "Project yang selesai disimpan tanpa menghapus riwayat, komentar, maupun asetnya." : "Pantau alur kerja tim. Di desktop tarik kartu; di HP gunakan Pindahkan status / edit cepat."} action={<div className="flex gap-2"><Button variant="outline" onClick={() => { setShowArchived((current) => !current); setSelected(null); }}><Archive size={17} />{showArchived ? "Kembali ke board" : "Buka arsip"}</Button>{!showArchived && <Button onClick={() => setAdding(true)}><Plus size={17} /> Tambah project</Button>}</div>} />
     <div className="mb-3 flex flex-wrap items-center gap-2"><div className="inline-flex rounded-md border border-[#d9d7cf] bg-white p-1"><button type="button" onClick={() => setPeriodMode("month")} className={cn("rounded px-3 py-1.5 text-xs font-bold", periodMode === "month" ? "bg-[#193246] text-white" : "text-[#667278] hover:bg-[#f3f1eb]")}>Bulanan</button><button type="button" onClick={() => setPeriodMode("year")} className={cn("rounded px-3 py-1.5 text-xs font-bold", periodMode === "year" ? "bg-[#193246] text-white" : "text-[#667278] hover:bg-[#f3f1eb]")}>Tahunan</button></div><MonthYearPicker month={period.month} year={period.year} mode={periodMode} onChange={setPeriod} /><Button type="button" size="sm" variant="outline" onClick={() => { const today = new Date(); setPeriod({ month: today.getMonth(), year: today.getFullYear() }); setPeriodMode("month"); }}>Hari ini</Button><span className="ml-auto text-[11px] text-[#8a9194]">{periodMode === "month" ? `Board ${monthNames[period.month]} ${period.year}` : `Board tahun ${period.year}`}</span></div>
     {projectError && <div className="mb-4 border-l-2 border-[#d8564e] bg-[#f9e8e5] px-3 py-2 text-xs text-[#a43d37]">{projectError}</div>}
     <div className="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center"><div className="relative min-w-64 max-w-md flex-1"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8f9699]" /><Input value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" placeholder="Cari project, PIC, atau kategori..." /></div><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><label className="sr-only" htmlFor="status-filter">Filter status</label><select id="status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as Status | "all")} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua status</option>{Object.keys(statusMeta).map((status) => <option key={status} value={status}>{status}</option>)}</select><label className="sr-only" htmlFor="pic-filter">Filter PIC</label><select id="pic-filter" value={picFilter} onChange={(e) => setPicFilter(e.target.value)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua PIC</option>{pics.map((pic) => <option key={pic} value={pic}>{pic}</option>)}</select><label className="sr-only" htmlFor="category-filter">Filter kategori</label><select id="category-filter" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua kategori</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select><label className="sr-only" htmlFor="sort-projects">Urutkan project</label><select id="sort-projects" value={sortOrder} onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="deadline">Deadline terdekat</option><option value="priority">Prioritas tertinggi</option><option value="title">Nama A–Z</option></select></div><div className="xl:ml-auto text-xs text-[#7d8589]"><b className="text-[#183044]">{filtered.length}</b> project ditampilkan</div></div>
     <div className="thin-scrollbar -mx-5 overflow-x-auto px-5 pb-4 md:-mx-8 md:px-8 xl:mx-0 xl:overflow-visible xl:px-0"><div className="grid min-w-[1080px] grid-cols-5 gap-2 xl:min-w-0">
-      {(Object.keys(statusMeta) as Status[]).map((status) => { const list = filtered.filter((p) => p.status === status); return <section key={status} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { if (!showArchived) drop(e, status); }} className="min-h-[540px] min-w-0 bg-[#eeece6] p-2"><div className="mb-2 flex items-center px-0.5 py-1"><i className={cn("mr-1.5 h-2 w-2 shrink-0 rounded-full", statusMeta[status].dot)} /><h2 className="truncate text-[10px] font-bold uppercase tracking-[0.08em]">{status}</h2><span className="ml-auto rounded-full bg-white px-1.5 py-0.5 text-[9px] font-bold text-[#7e878b]">{list.length}</span></div><div className="space-y-2">{list.map((p) => { const permissions = permissionsFor(p); return <ProjectCard key={p.id} project={p} canDrag={!showArchived && (permissions.canEdit || permissions.role === "Anggota")} onClick={() => setSelected(p)} />; })}{list.length === 0 && <div className="grid h-20 place-items-center border border-dashed border-[#cbc7bd] px-2 text-center text-[10px] text-[#9a9c9a]">{showArchived ? "Tidak ada project arsip" : "Tarik project ke sini"}</div>}</div></section>; })}
+      {(Object.keys(statusMeta) as Status[]).map((status) => { const list = filtered.filter((p) => p.status === status); return <section key={status} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { if (!showArchived && !touchKanban) drop(e, status); }} className="min-h-[540px] min-w-0 bg-[#eeece6] p-2"><div className="mb-2 flex items-center px-0.5 py-1"><i className={cn("mr-1.5 h-2 w-2 shrink-0 rounded-full", statusMeta[status].dot)} /><h2 className="truncate text-[10px] font-bold uppercase tracking-[0.08em]">{status}</h2><span className="ml-auto rounded-full bg-white px-1.5 py-0.5 text-[9px] font-bold text-[#7e878b]">{list.length}</span></div><div className="space-y-2">{list.map((p) => { const permissions = permissionsFor(p); const canRequestDone = permissions.canRequestCompletion && p.status !== "Done"; return <ProjectCard key={p.id} project={p} canDrag={!touchKanban && !showArchived && (permissions.canEdit || canRequestDone)} canQuickEdit={!showArchived && (permissions.canEdit || canRequestDone)} onClick={() => setSelected(p)} onQuickEdit={() => setQuickEditing(p)} />; })}{list.length === 0 && <div className="grid h-20 place-items-center border border-dashed border-[#cbc7bd] px-2 text-center text-[10px] text-[#9a9c9a]">{showArchived ? "Tidak ada project arsip" : touchKanban ? "Belum ada project" : "Tarik project ke sini"}</div>}</div></section>; })}
     </div></div>
     <AddProjectDialog open={adding} defaultDeadline={`${period.year}-${String(period.month + 1).padStart(2, "0")}-15`} workspaceMembers={workspaceMembers} currentUserEmail={profile.email} onOpenChange={setAdding} onAdd={(project) => { void createProject(project); }} />
     <ProjectDetail project={selected} open={!!selected && !editing && !deleting} backendEnabled={backendEnabled} fallbackPermissions={selected ? permissionsFor(selected) : { role: null, canEdit: false, canManageMembers: false, canComment: false, canRequestCompletion: false, canApproveCompletion: false, canDelete: false }} onOpenChange={(v) => !v && setSelected(null)} onEdit={() => setEditing(true)} onDelete={() => setDeleting(true)} onArchive={() => { if (selected) void toggleArchive(selected); }} onProjectUpdated={(updated) => { setProjects((current) => current.map((item) => item.id === updated.id ? updated : item)); setSelected(updated); }} />
     <EditProjectDialog project={selected} open={editing} workspaceMembers={workspaceMembers} onOpenChange={setEditing} onSave={(project) => { void saveProject(project); }} />
+    <ProjectQuickEditDialog project={quickEditing} open={!!quickEditing} workspaceMembers={workspaceMembers} canEdit={quickEditing ? permissionsFor(quickEditing).canEdit : false} canRequestCompletion={quickEditing ? permissionsFor(quickEditing).canRequestCompletion : false} busy={quickEditBusy} onOpenChange={(open) => !open && setQuickEditing(null)} onSave={(project) => { void saveQuickEdit(project); }} />
     <DeleteProjectDialog project={selected} open={deleting} onOpenChange={setDeleting} onConfirm={() => { if (selected) void deleteProject(selected); }} />
+    {undoChange && <div role="status" className="fixed bottom-5 left-1/2 z-[80] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 rounded-md bg-[#193246] px-4 py-3 text-xs text-white shadow-[0_12px_36px_rgba(16,38,54,.28)]"><Check size={16} className="shrink-0 text-[#7fc4a5]" /><span className="min-w-0 flex-1">{undoChange.message}</span><button type="button" onClick={() => void undoProjectChange()} className="min-h-9 shrink-0 rounded px-2 font-bold text-[#f2b889] hover:bg-white/10">Batalkan</button><button type="button" aria-label="Tutup notifikasi" onClick={() => setUndoChange(null)} className="grid h-9 w-9 shrink-0 place-items-center rounded hover:bg-white/10"><X size={15} /></button></div>}
   </div>;
 }
 
@@ -1577,22 +1728,26 @@ function activityTimeLabel(date: Date, now = new Date()) {
   return `${calendarDate}, ${clock}`;
 }
 
-function ActivityHistory() {
+function ActivityHistory({ isAdmin }: { isAdmin: boolean }) {
   const [search, setSearch] = useState("");
   const [userFilter, setUserFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
-  const [logs, setLogs] = useState([
+  const [logs, setLogs] = useState(isAdmin ? [
     { day: "Hari ini", time: "12 menit lalu", user: "Nadia Putri", i: "NP", action: "memindahkan project", target: "FGD Komunitas Urban", detail: "On Going → Delay", type: "status" },
     { day: "Hari ini", time: "48 menit lalu", user: "Dita Anjani", i: "DA", action: "menambahkan catatan revisi pada", target: "Laporan Tren Gen Z", detail: "Executive summary perlu dipadatkan", type: "note" },
     { day: "Hari ini", time: "3 jam lalu", user: "Arga Wibawa", i: "AW", action: "mengubah deadline", target: "Benchmark Industri Energi", detail: "08 Sep → 10 Sep", type: "date" },
     { day: "Kemarin", time: "Kemarin, 16.24", user: "Fikri Ramadhan", i: "FR", action: "menyelesaikan project", target: "Analisis Kompetitor Fintech", detail: "Dipindahkan ke Asset & Library", type: "done" },
     { day: "Kemarin", time: "Kemarin, 14.03", user: "Maya Kirana", i: "MK", action: "menambahkan agenda", target: "Town hall riset", detail: "31 Agu, 15.00", type: "date" },
     { day: "25 Agustus", time: "25 Agu, 10.15", user: "Nadia Putri", i: "NP", action: "mengubah PIC", target: "Riset Persepsi Publik Q3", detail: "Angga → Nadia", type: "user" },
+  ] : [
+    { day: "Hari ini", time: "20 menit lalu", user: "Nadia Putri", i: "NP", action: "menambahkan project", target: "Riset Persepsi Publik Q3", detail: "", type: "status" },
+    { day: "Kemarin", time: "Kemarin, 16.24", user: "Fikri Ramadhan", i: "FR", action: "menyelesaikan project", target: "Analisis Kompetitor Fintech", detail: "", type: "done" },
+    { day: "25 Agustus", time: "25 Agu, 10.15", user: "Dita Anjani", i: "DA", action: "mengirim project untuk revisi", target: "Laporan Tren Gen Z", detail: "", type: "note" },
   ]);
   useEffect(() => {
     fetch("/api/activity?limit=50")
       .then((response) => response.ok ? response.json() : Promise.reject())
-      .then((payload: { data: Array<{ actorName: string; actorInitials: string; action: string; details: string; projectTitle: string | null; createdAt: string }> }) => {
+      .then((payload: { scope: "detailed" | "summary"; data: Array<{ actorName: string; actorInitials: string; action: string; details: string; projectTitle: string | null; createdAt: string }> }) => {
         const today = new Date();
         const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
         setLogs(payload.data.map((log) => {
@@ -1624,9 +1779,9 @@ function ActivityHistory() {
   });
   const hasFilters = !!query || userFilter !== "all" || projectFilter !== "all";
   const resetFilters = () => { setSearch(""); setUserFilter("all"); setProjectFilter("all"); };
-  return <div className="fade-up"><SectionHeading eyebrow="History" title="Activity History" description="Jejak perubahan workspace agar semua keputusan dan progres tetap transparan." />
+  return <div className="fade-up"><SectionHeading eyebrow="History" title="Activity History" description={isAdmin ? "Detail perubahan project, agenda, aset, dan backup hanya terlihat oleh Admin." : "Ringkasan milestone project: project baru, selesai, atau masuk revisi."} />
     <div className="mb-6 flex flex-col gap-3 lg:flex-row"><div className="relative min-w-60 max-w-md flex-1"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8f9699]" /><Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Cari aktivitas atau project..." /></div><label className="relative flex h-10 min-w-48 items-center rounded-md border border-[#d9d7cf] bg-white px-3 text-sm"><Users size={15} className="mr-2 text-[#727b80]" /><select aria-label="Filter pengguna aktivitas" value={userFilter} onChange={(event) => setUserFilter(event.target.value)} className="w-full appearance-none bg-transparent pr-6 outline-none"><option value="all">Semua anggota</option>{users.map((user) => <option key={user} value={user}>{user}</option>)}</select><ChevronDown size={13} className="pointer-events-none absolute right-3 text-[#727b80]" /></label><label className="relative flex h-10 min-w-52 items-center rounded-md border border-[#d9d7cf] bg-white px-3 text-sm"><FolderOpen size={15} className="mr-2 text-[#727b80]" /><select aria-label="Filter project aktivitas" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} className="w-full appearance-none bg-transparent pr-6 outline-none"><option value="all">Semua project</option>{projects.map((project) => <option key={project} value={project}>{project}</option>)}</select><ChevronDown size={13} className="pointer-events-none absolute right-3 text-[#727b80]" /></label>{hasFilters && <Button variant="ghost" onClick={resetFilters}><X size={15} /> Reset</Button>}</div>
-    <section className="bg-white px-5 py-2 md:px-7">{filteredLogs.map((log, i) => { const Icon = iconFor(log.type); const showDay = i === 0 || filteredLogs[i - 1].day !== log.day; return <div key={`${log.time}-${log.target}`}>{showDay && <div className="border-b border-[#e7e4dc] pb-2 pt-5 text-[10px] font-bold uppercase tracking-[.18em] text-[#8b9295]">{log.day}</div>}<div className="grid grid-cols-[42px_1fr] gap-3 py-4 md:grid-cols-[90px_42px_1fr_auto] md:items-center"><div className="hidden text-xs text-[#8d9497] md:block">{log.time}</div><div className="relative"><MiniAvatar initials={log.i} className="h-9 w-9" /><span className="absolute -bottom-1 -right-1 grid h-4 w-4 place-items-center rounded-full bg-[#f1efe9] ring-2 ring-white"><Icon size={9} /></span></div><div className="text-sm leading-6 text-[#5b666c]"><b className="text-[#183044]">{log.user}</b> {log.action} <b className="text-[#183044]">{log.target}</b><div className="text-xs text-[#92989b] md:hidden">{log.time}</div></div><Badge className="hidden bg-[#f2f0ea] font-medium text-[#677279] md:inline-flex">{log.detail}</Badge></div></div>; })}{filteredLogs.length === 0 && <div className="grid min-h-64 place-items-center text-center"><div><History size={30} className="mx-auto text-[#a3aaad]" /><h2 className="mt-4 font-serif text-xl font-semibold">Aktivitas tidak ditemukan</h2><p className="mt-2 text-sm text-[#747d81]">Coba project, pengguna, atau kata kunci lain.</p><Button variant="outline" className="mt-4" onClick={resetFilters}>Reset filter</Button></div></div>}</section>
+    <section className="bg-white px-5 py-2 md:px-7">{filteredLogs.map((log, i) => { const Icon = iconFor(log.type); const showDay = i === 0 || filteredLogs[i - 1].day !== log.day; return <div key={`${log.time}-${log.target}`}>{showDay && <div className="border-b border-[#e7e4dc] pb-2 pt-5 text-[10px] font-bold uppercase tracking-[.18em] text-[#8b9295]">{log.day}</div>}<div className={cn("grid grid-cols-[42px_1fr] gap-3 py-4 md:items-center", isAdmin ? "md:grid-cols-[90px_42px_1fr_auto]" : "md:grid-cols-[90px_42px_1fr]")}><div className="hidden text-xs text-[#8d9497] md:block">{log.time}</div><div className="relative"><MiniAvatar initials={log.i} className="h-9 w-9" /><span className="absolute -bottom-1 -right-1 grid h-4 w-4 place-items-center rounded-full bg-[#f1efe9] ring-2 ring-white"><Icon size={9} /></span></div><div className="text-sm leading-6 text-[#5b666c]"><b className="text-[#183044]">{log.user}</b> {log.action} <b className="text-[#183044]">{log.target}</b><div className="text-xs text-[#92989b] md:hidden">{log.time}</div></div>{isAdmin && <Badge className="hidden bg-[#f2f0ea] font-medium text-[#677279] md:inline-flex">{log.detail || "Aktivitas workspace"}</Badge>}</div></div>; })}{filteredLogs.length === 0 && <div className="grid min-h-64 place-items-center text-center"><div><History size={30} className="mx-auto text-[#a3aaad]" /><h2 className="mt-4 font-serif text-xl font-semibold">Belum ada aktivitas kerja</h2><p className="mt-2 text-sm text-[#747d81]">{isAdmin ? "Perubahan project, agenda, aset, dan backup akan muncul di sini." : "Project baru, selesai, atau masuk revisi akan muncul di sini."}</p>{hasFilters && <Button variant="outline" className="mt-4" onClick={resetFilters}>Reset filter</Button>}</div></div>}</section>
   </div>;
 }
 
@@ -1772,6 +1927,16 @@ type AdminPasswordReset = {
   requestedAt: string;
 };
 
+type AdminBackup = {
+  id: number;
+  label: string;
+  schemaVersion: number;
+  summary: Record<string, number>;
+  createdByName: string | null;
+  createdAt: string;
+  restoredAt: string | null;
+};
+
 function AdminMembersPage() {
   const [invites, setInvites] = useState<AdminInvite[]>([]);
   const [passwordResets, setPasswordResets] = useState<AdminPasswordReset[]>([]);
@@ -1782,6 +1947,13 @@ function AdminMembersPage() {
   const [resetSaving, setResetSaving] = useState(false);
   const [selectedReset, setSelectedReset] = useState<AdminPasswordReset | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [backups, setBackups] = useState<AdminBackup[]>([]);
+  const [backupLabel, setBackupLabel] = useState("");
+  const [backupLoading, setBackupLoading] = useState(true);
+  const [backupSaving, setBackupSaving] = useState(false);
+  const [selectedBackup, setSelectedBackup] = useState<AdminBackup | null>(null);
+  const [restoreConfirmation, setRestoreConfirmation] = useState("");
+  const [restoreSaving, setRestoreSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -1815,7 +1987,22 @@ function AdminMembersPage() {
     }
   }, []);
 
-  useEffect(() => { void Promise.all([loadInvites(), loadPasswordResets()]); }, [loadInvites, loadPasswordResets]);
+  const loadBackups = useCallback(async () => {
+    setBackupLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/backups", { cache: "no-store" });
+      const payload = await response.json() as { data?: AdminBackup[]; error?: string };
+      if (!response.ok || !payload.data) throw new Error(payload.error || "Gagal memuat backup");
+      setBackups(payload.data);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Daftar backup belum dapat dimuat.");
+    } finally {
+      setBackupLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void Promise.all([loadInvites(), loadPasswordResets(), loadBackups()]); }, [loadBackups, loadInvites, loadPasswordResets]);
 
   const addInvite = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -1884,6 +2071,55 @@ function AdminMembersPage() {
     }
   };
 
+  const createBackup = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBackupSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/admin/backups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: backupLabel.trim() || undefined }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Backup belum dapat dibuat.");
+      setBackupLabel("");
+      setNotice("Backup data operasional berhasil dibuat dan siap diunduh.");
+      await loadBackups();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Backup belum dapat dibuat.");
+    } finally {
+      setBackupSaving(false);
+    }
+  };
+
+  const restoreBackup = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedBackup || restoreConfirmation !== "PULIHKAN") return;
+    setRestoreSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/admin/backups/${selectedBackup.id}/restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmation: restoreConfirmation }),
+      });
+      const payload = await response.json() as { data?: { safetyBackupId: number }; error?: string };
+      if (!response.ok || !payload.data) throw new Error(payload.error || "Pemulihan data gagal.");
+      setSelectedBackup(null);
+      setRestoreConfirmation("");
+      setNotice(`Data berhasil dipulihkan. Safety backup #${payload.data.safetyBackupId} dibuat sebelum perubahan.`);
+      await loadBackups();
+      window.setTimeout(() => window.location.reload(), 1500);
+    } catch (restoreError) {
+      setError(restoreError instanceof Error ? restoreError.message : "Pemulihan data gagal tanpa mengubah data saat ini.");
+    } finally {
+      setRestoreSaving(false);
+    }
+  };
+
   return <div className="fade-up">
     <SectionHeading eyebrow="Administration" title="Anggota & undangan" description="Tentukan email yang boleh membuat akun dan pantau siapa yang sudah bergabung." />
     <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
@@ -1924,6 +2160,17 @@ function AdminMembersPage() {
         {!resetLoading && passwordResets.length === 0 && <div className="py-12 text-center text-sm text-[#7b8387]">Tidak ada permintaan reset password yang menunggu.</div>}
       </div>
     </section>
+    <section className="mt-6 bg-white p-6 md:p-8">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#e76f36]"><Archive size={14} /> Perlindungan data</div><h2 className="mt-2 font-serif text-2xl font-semibold">Backup & pemulihan</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-[#747d81]">Snapshot mencakup project, anggota project, komentar, approval, agenda, aset, dan Activity History. Password, akun login, serta sesi tidak pernah dimasukkan.</p></div><Button variant="outline" size="sm" onClick={() => void loadBackups()} disabled={backupLoading}>{backupLoading ? <LoaderCircle size={14} className="animate-spin" /> : <RotateCcw size={14} />}Muat ulang</Button></div>
+      <form onSubmit={createBackup} className="mt-6 flex flex-col gap-3 border border-[#e5e2da] bg-[#faf9f5] p-4 sm:flex-row sm:items-end"><label className="min-w-0 flex-1 text-xs font-bold text-[#59656c]">Nama backup (opsional)<Input value={backupLabel} onChange={(event) => setBackupLabel(event.target.value)} className="mt-2 bg-white font-normal" maxLength={120} placeholder="Contoh: Sebelum perubahan struktur project" /></label><Button type="submit" disabled={backupSaving}>{backupSaving ? <LoaderCircle size={16} className="animate-spin" /> : <Archive size={16} />}{backupSaving ? "Membuat backup..." : "Buat backup sekarang"}</Button></form>
+      <div className="mt-6 divide-y divide-[#ebe8df] border-y border-[#ebe8df]">
+        {backupLoading ? <div className="grid min-h-40 place-items-center text-[#e76f36]"><LoaderCircle className="animate-spin" size={24} /></div> : backups.map((backup) => <div key={backup.id} className="flex flex-col gap-3 py-4 lg:flex-row lg:items-center"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#eef1f2] text-[#53626b]"><Archive size={16} /></div><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-[#183044]">{backup.label}</div><div className="mt-1 text-[11px] leading-5 text-[#879095]">{new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(backup.createdAt))} · {backup.createdByName || "Admin sebelumnya"} · {backup.summary.projects ?? 0} project · {backup.summary.comments ?? 0} komentar · {backup.summary.assets ?? 0} aset{backup.restoredAt ? " · Pernah dipulihkan" : ""}</div></div><div className="flex flex-wrap gap-2"><Button asChild variant="outline" size="sm"><a href={`/api/admin/backups/${backup.id}`} download><Download size={14} /> Unduh JSON</a></Button><Button type="button" variant="outline" size="sm" className="border-[#e2b9b5] text-[#b9433d]" onClick={() => { setSelectedBackup(backup); setRestoreConfirmation(""); setError(""); }}><RotateCcw size={14} /> Pulihkan</Button></div></div>)}
+        {!backupLoading && backups.length === 0 && <div className="py-12 text-center text-sm text-[#7b8387]">Belum ada backup. Buat snapshot pertama sebelum perubahan besar.</div>}
+      </div>
+    </section>
+    <Dialog open={Boolean(selectedBackup)} onOpenChange={(open) => { if (!open && !restoreSaving) { setSelectedBackup(null); setRestoreConfirmation(""); } }}>
+      <DialogContent><DialogHeader><div className="mb-3 grid h-11 w-11 place-items-center rounded-full bg-[#f9e8e5] text-[#b9433d]"><RotateCcw size={20} /></div><DialogTitle>Pulihkan backup ini?</DialogTitle><DialogDescription>{selectedBackup ? `Seluruh data operasional akan dikembalikan ke snapshot “${selectedBackup.label}”.` : ""} Sistem otomatis membuat safety backup dari kondisi saat ini sebelum pemulihan.</DialogDescription></DialogHeader><form onSubmit={restoreBackup} className="mt-2 space-y-4"><label className="block text-xs font-bold text-[#59656c]">Ketik PULIHKAN untuk melanjutkan<Input value={restoreConfirmation} onChange={(event) => setRestoreConfirmation(event.target.value.toUpperCase())} className="mt-2 font-normal" autoComplete="off" /></label><div className="border-l-2 border-[#d8564e] bg-[#f9e8e5] px-4 py-3 text-xs leading-5 text-[#8f3833]">Pengguna lain sebaiknya tidak mengubah project selama proses pemulihan berlangsung.</div><div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => { setSelectedBackup(null); setRestoreConfirmation(""); }} disabled={restoreSaving}>Batal</Button><Button type="submit" className="bg-[#c84942] hover:bg-[#ae3d37]" disabled={restoreSaving || restoreConfirmation !== "PULIHKAN"}>{restoreSaving ? <LoaderCircle size={16} className="animate-spin" /> : <RotateCcw size={16} />}{restoreSaving ? "Memulihkan..." : "Pulihkan data"}</Button></div></form></DialogContent>
+    </Dialog>
     <Dialog open={Boolean(selectedReset)} onOpenChange={(open) => { if (!open && !resetSaving) { setSelectedReset(null); setTemporaryPassword(""); } }}>
       <DialogContent>
         <DialogHeader><DialogTitle>Tetapkan password sementara</DialogTitle><DialogDescription>{selectedReset ? `Untuk ${selectedReset.name} (${selectedReset.email}).` : ""} Setelah disimpan, seluruh sesi lama anggota akan dicabut.</DialogDescription></DialogHeader>
@@ -2150,7 +2397,7 @@ export default function Home() {
   else if (active === "tracker") page = <ProjectTracker projects={projects} setProjects={setProjects} backendEnabled={!!session} profile={profile} isAdmin={isAdmin} />;
   else if (active === "calendar") page = <CalendarPlanner projects={projects} backendEnabled={!!session} />;
   else if (active === "library") page = <AssetLibrary backendEnabled={!!session} />;
-  else if (active === "activity") page = <ActivityHistory />;
+  else if (active === "activity") page = <ActivityHistory isAdmin={isAdmin} />;
   else if (active === "admin" && isAdmin) page = <AdminMembersPage />;
   else page = <ProfilePage profile={profile} backendEnabled={!!session} onSave={saveProfile} onLogout={logout} />;
 

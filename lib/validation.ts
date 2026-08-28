@@ -24,7 +24,9 @@ export const createProjectSchema = z.object({
   workingDocLink: optionalUrl,
 });
 
-export const updateProjectSchema = createProjectSchema.partial().refine((data) => Object.keys(data).length > 0, "No fields supplied");
+export const updateProjectSchema = createProjectSchema.partial().extend({
+  expectedVersion: z.number().int().positive(),
+}).refine((data) => Object.keys(data).some((key) => key !== "expectedVersion"), "No fields supplied");
 
 export const projectCommentSchema = z.object({
   body: z.string().trim().min(1).max(4000),

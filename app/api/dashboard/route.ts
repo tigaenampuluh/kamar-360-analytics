@@ -2,6 +2,8 @@ import { and, asc, desc, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { activityLogs, agendas, projects } from "@/db/schema";
 import { getApiSession, unauthorized } from "@/lib/api";
+import { isAdminEmail } from "@/lib/admin";
+import { memberActivityLabel, memberProjectMilestoneCondition, workActivityCondition } from "@/lib/activity-filter";
 import type { ProjectStatus } from "@/lib/models/project";
 
 export const runtime = "nodejs";
@@ -21,6 +23,7 @@ function createWorkStatistics(rows: Array<{ status: ProjectStatus; count: number
 export async function GET(request: Request) {
   const session = await getApiSession(request);
   if (!session) return unauthorized();
+  const detailedActivity = isAdminEmail(session.user.email);
   const now = new Date();
   const reminderWindowEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   const statusRows = await db.select({ status: projects.status, count: sql<number>`count(*)::int` }).from(projects).groupBy(projects.status);
@@ -38,7 +41,13 @@ export async function GET(request: Request) {
     action: activityLogs.action,
     details: activityLogs.details,
     createdAt: activityLogs.createdAt,
-  }).from(activityLogs).leftJoin(projects, eq(activityLogs.projectId, projects.id)).orderBy(desc(activityLogs.createdAt)).limit(5);
+  }).from(activityLogs).leftJoin(projects, eq(activityLogs.projectId, projects.id)).where(detailedActivity ? workActivityCondition() : memberProjectMilestoneCondition()).orderBy(desc(activityLogs.createdAt)).limit(5);
+  const visibleActivity = detailedActivity ? recentActivity : recentActivity.map((row) => ({
+    ...row,
+    action: memberActivityLabel(row.action, row.details),
+    projectTitle: row.projectTitle || row.details,
+    details: "",
+  }));
   const deadlineReminders = [
     ...upcomingDeadlines.map((project) => ({
       id: `project-${project.id}`,
@@ -67,7 +76,7 @@ export async function GET(request: Request) {
       upcomingAgendas,
       upcomingDeadlines,
       deadlineReminders,
-      recentActivity,
+      recentActivity: visibleActivity,
     },
   });
 }

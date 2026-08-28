@@ -21,6 +21,12 @@ function parseProjectId(value: string) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
+function parseExpectedVersion(request: Request) {
+  const value = request.headers.get("if-match")?.replace(/^W\//, "").replaceAll('"', "");
+  const version = value ? Number(value) : NaN;
+  return Number.isInteger(version) && version > 0 ? version : null;
+}
+
 export async function GET(request: Request, { params }: Context) {
   const session = await getApiSession(request);
   if (!session) return unauthorized();
@@ -50,7 +56,7 @@ export async function PATCH(request: Request, { params }: Context) {
   if (input.primaryPicUserId && !primaryPic) return badRequest("PIC yang dipilih tidak ditemukan");
   if (input.memberAssignments && !await validateAssignments(input.memberAssignments)) return badRequest("Salah satu anggota project tidak ditemukan");
   const existingMembers = input.memberAssignments ? await getProjectMembers(id) : [];
-  const { memberAssignments, ...projectInput } = input;
+  const { expectedVersion, memberAssignments, ...projectInput } = input;
   const update = {
     ...projectInput,
     ...(primaryPic ? { pic: primaryPic.name, picInitials: initials(primaryPic.name), primaryPicUserId: primaryPic.id } : {}),
@@ -58,12 +64,21 @@ export async function PATCH(request: Request, { params }: Context) {
     ...(!primaryPic && input.pic ? { picInitials: input.picInitials || initials(input.pic) } : {}),
     ...(input.workingDocLink !== undefined ? { workingDocLink: input.workingDocLink || null } : {}),
   };
-  const project = await updateProjectWithActivity(id, update, {
+  const result = await updateProjectWithActivity(id, update, {
     userId: session.user.id,
     name: session.user.name,
     initials: initials(session.user.name),
-  });
-  if (!project) return notFound("Project");
+  }, expectedVersion);
+  if (result.kind === "not-found") return notFound("Project");
+  if (result.kind === "conflict") {
+    const members = await getProjectMembers(id);
+    return Response.json({
+      error: "Project sudah diubah oleh pengguna lain. Data terbaru dimuat agar perubahan mereka tidak tertimpa.",
+      code: "PROJECT_CONFLICT",
+      data: { ...result.current, members },
+    }, { status: 409 });
+  }
+  const project = result.project;
   if (memberAssignments) {
     const normalized = normalizeAssignments(memberAssignments, session.user.id, primaryPic?.id ?? current.primaryPicUserId);
     await syncProjectMembers(id, normalized, session.user.id);
@@ -85,7 +100,14 @@ export async function DELETE(request: Request, { params }: Context) {
   if (!project) return notFound("Project");
   const access = await getProjectAccess(id, session.user.id, session.user.email);
   if (!access.canDelete) return forbidden("Hanya Admin atau Lead project yang dapat menghapus project");
-  await deleteProject(id);
+  const expectedVersion = parseExpectedVersion(request);
+  if (!expectedVersion) return badRequest("Versi project wajib dikirim untuk mencegah konflik data");
+  const deleted = await deleteProject(id, expectedVersion);
+  if (!deleted) {
+    const latest = await findProjectById(id);
+    if (!latest) return notFound("Project");
+    return Response.json({ error: "Project sudah diubah oleh pengguna lain dan belum dihapus.", code: "PROJECT_CONFLICT", data: latest }, { status: 409 });
+  }
   await db.insert(activityLogs).values({ userId: session.user.id, actorName: session.user.name, actorInitials: initials(session.user.name), action: "menghapus project", details: project.title });
   return new Response(null, { status: 204 });
 }

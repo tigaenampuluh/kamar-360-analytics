@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, ilike, isNotNull, isNull, lt, ne, or, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, ilike, isNotNull, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { activityLogs, assets, projectMemberships, projects } from "@/db/schema";
 import type { NewProjectRecord, ProjectChanges, ProjectFilters } from "@/lib/models/project";
@@ -51,14 +51,6 @@ export async function createProject(values: NewProjectRecord) {
   return project;
 }
 
-export async function updateProject(id: number, changes: ProjectChanges) {
-  const [project] = await db.update(projects)
-    .set({ ...changes, updatedAt: new Date() })
-    .where(eq(projects.id, id))
-    .returning();
-  return project ?? null;
-}
-
 type ActivityActor = {
   userId: string;
   name: string;
@@ -96,10 +88,13 @@ export async function createProjectWithActivity(values: NewProjectRecord, actor:
   return { ...project, members: members.get(project.id) ?? [] };
 }
 
-export async function updateProjectWithActivity(id: number, changes: ProjectChanges, actor: ActivityActor) {
+export async function updateProjectWithActivity(id: number, changes: ProjectChanges, actor: ActivityActor, expectedVersion?: number) {
   const result = await db.transaction(async (transaction) => {
     const [current] = await transaction.select().from(projects).where(eq(projects.id, id)).limit(1);
-    if (!current) return null;
+    if (!current) return { kind: "not-found" as const };
+    if (expectedVersion !== undefined && expectedVersion !== current.version) {
+      return { kind: "conflict" as const, current };
+    }
 
     const doneAtChange = changes.status === "Done" && current.status !== "Done"
       ? new Date()
@@ -109,9 +104,13 @@ export async function updateProjectWithActivity(id: number, changes: ProjectChan
     const persistedChanges = doneAtChange === undefined ? changes : { ...changes, doneAt: doneAtChange };
 
     const [project] = await transaction.update(projects)
-      .set({ ...persistedChanges, updatedAt: new Date() })
-      .where(eq(projects.id, id))
+      .set({ ...persistedChanges, version: sql`${projects.version} + 1`, updatedAt: new Date() })
+      .where(and(eq(projects.id, id), eq(projects.version, current.version)))
       .returning();
+    if (!project) {
+      const [latest] = await transaction.select().from(projects).where(eq(projects.id, id)).limit(1);
+      return latest ? { kind: "conflict" as const, current: latest } : { kind: "not-found" as const };
+    }
 
     const statusChanged = changes.status !== undefined && changes.status !== current.status;
     await transaction.insert(activityLogs).values({
@@ -141,16 +140,17 @@ export async function updateProjectWithActivity(id: number, changes: ProjectChan
     }
 
     return {
+      kind: "updated" as const,
       project,
       notificationDetail: statusChanged ? `status ${current.status} menjadi ${changes.status}` : "informasi project diperbarui",
     };
   });
-  if (!result) return null;
+  if (result.kind !== "updated") return result;
   await notifyProjectUpdated(result.project, actor.userId, actor.name, result.notificationDetail);
-  return result.project;
+  return result;
 }
 
-export async function deleteProject(id: number) {
-  const [project] = await db.delete(projects).where(eq(projects.id, id)).returning();
+export async function deleteProject(id: number, expectedVersion: number) {
+  const [project] = await db.delete(projects).where(and(eq(projects.id, id), eq(projects.version, expectedVersion))).returning();
   return project ?? null;
 }

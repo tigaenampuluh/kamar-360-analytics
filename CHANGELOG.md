@@ -2,6 +2,21 @@
 
 All notable production changes to 360 - Center of Research are documented here.
 
+## [0.4.0] - 2026-08-29
+
+### Added
+
+- Admin-only workspace backup snapshots, JSON downloads, guarded restoration, and automatic safety backups before every restore.
+- Optimistic version checks prevent one user's project edit, archive, deletion, or approval from silently overwriting newer data.
+- Mobile Kanban cards now provide a dedicated status and quick-edit action instead of relying on touch drag-and-drop.
+- Quick edit supports project status, PIC, deadline, and priority, followed by a seven-second server-backed undo action.
+- Installable mobile app metadata and a 360 home-screen icon.
+
+### Changed
+
+- Activity History shows only project-created, project-completed, and project-revision milestones to regular members.
+- Admins retain the detailed operational Activity History, including backup activity.
+
 ## [0.3.1] - 2026-08-29
 
 ### Changed
@@ -55,6 +70,7 @@ First formally versioned production baseline.
 - Project data and dashboard counts now stay synchronized across the main workspace views.
 - Login sessions end when the browser closes or after 10 minutes without activity.
 
+[0.4.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.4.0
 [0.3.1]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.3.1
 [0.3.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.3.0
 [0.2.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.2.0

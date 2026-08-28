@@ -31,6 +31,18 @@ export async function PATCH(request: Request, { params }: Context) {
     )).limit(1);
   if (!approval) return notFound("Pending approval");
 
+  if (parsed.data.decision === "approved") {
+    const updateResult = await updateProjectWithActivity(projectId, { status: "Done" }, {
+      userId: session.user.id,
+      name: session.user.name,
+      initials: initials(session.user.name),
+    }, project.version);
+    if (updateResult.kind === "not-found") return notFound("Project");
+    if (updateResult.kind === "conflict") {
+      return Response.json({ error: "Project berubah ketika approval diproses. Muat ulang detail project sebelum mencoba lagi.", code: "PROJECT_CONFLICT", data: updateResult.current }, { status: 409 });
+    }
+  }
+
   await db.transaction(async (transaction) => {
     await transaction.update(projectCompletionApprovals).set({
       status: parsed.data.decision,
@@ -47,13 +59,6 @@ export async function PATCH(request: Request, { params }: Context) {
       details: project.title,
     });
   });
-  if (parsed.data.decision === "approved") {
-    await updateProjectWithActivity(projectId, { status: "Done" }, {
-      userId: session.user.id,
-      name: session.user.name,
-      initials: initials(session.user.name),
-    });
-  }
   await notifyCompletionResolved(project, session.user.id, session.user.name, approval.requestedBy, parsed.data.decision);
   return Response.json({ data: await getLatestCompletionApproval(projectId) });
 }

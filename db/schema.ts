@@ -78,6 +78,7 @@ export const projects = pgTable("projects", {
   priority: text("priority", { enum: ["High", "Medium", "Low"] }).notNull().default("Medium"),
   category: text("category").notNull(),
   workingDocLink: text("working_doc_link"),
+  version: integer("version").notNull().default(1),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (table) => [
@@ -231,6 +232,20 @@ export const passwordResetRequests = pgTable("password_reset_requests", {
     .on(table.userId)
     .where(sql`${table.resolvedAt} is null`),
   index("idx_password_reset_requests_requested_at").on(table.requestedAt),
+]);
+
+export const workspaceBackups = pgTable("workspace_backups", {
+  id: serial("id").primaryKey(),
+  label: text("label").notNull(),
+  schemaVersion: integer("schema_version").notNull().default(1),
+  snapshot: jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
+  summary: jsonb("summary").$type<Record<string, number>>().notNull().default(sql`'{}'::jsonb`),
+  createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+  restoredAt: timestamp("restored_at", { withTimezone: true }),
+  restoredBy: text("restored_by").references(() => user.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+}, (table) => [
+  index("idx_workspace_backups_created_at").on(table.createdAt),
 ]);
 
 export const userRelations = relations(user, ({ many }) => ({

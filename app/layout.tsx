@@ -4,6 +4,13 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "360 - Center of Research — Project Workspace",
   description: "Workspace terpusat untuk melacak, menjadwalkan, dan mengarsipkan project riset.",
+  applicationName: "360 - Center of Research",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "360 Research",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

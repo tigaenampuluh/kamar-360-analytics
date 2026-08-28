@@ -15,4 +15,4 @@ export type ProjectFilters = {
   archived?: boolean;
 };
 
-export type ProjectChanges = Partial<Omit<NewProjectRecord, "id" | "createdAt">>;
+export type ProjectChanges = Partial<Omit<NewProjectRecord, "id" | "createdAt" | "updatedAt" | "version">>;

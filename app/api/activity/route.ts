@@ -2,17 +2,22 @@ import { and, desc, eq, ilike, or, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { activityLogs, projects } from "@/db/schema";
 import { badRequest, getApiSession, unauthorized } from "@/lib/api";
+import { isAdminEmail } from "@/lib/admin";
+import { memberActivityLabel, memberProjectMilestoneCondition, workActivityCondition } from "@/lib/activity-filter";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const session = await getApiSession(request);
   if (!session) return unauthorized();
+  const detailed = isAdminEmail(session.user.email);
   const url = new URL(request.url);
   const conditions: SQL[] = [];
   const userId = url.searchParams.get("userId");
   const projectId = url.searchParams.get("projectId");
   const search = url.searchParams.get("search")?.trim();
+  // Anggota melihat milestone project saja; detail operasional hanya untuk Admin.
+  conditions.push(detailed ? workActivityCondition() : memberProjectMilestoneCondition());
   if (userId) conditions.push(eq(activityLogs.userId, userId));
   if (projectId) {
     const parsedProjectId = Number(projectId);
@@ -34,5 +39,13 @@ export async function GET(request: Request) {
     details: activityLogs.details,
     createdAt: activityLogs.createdAt,
   }).from(activityLogs).leftJoin(projects, eq(activityLogs.projectId, projects.id)).where(conditions.length ? and(...conditions) : undefined).orderBy(desc(activityLogs.createdAt)).limit(limit);
-  return Response.json({ data: rows });
+  return Response.json({
+    scope: detailed ? "detailed" : "summary",
+    data: detailed ? rows : rows.map((row) => ({
+      ...row,
+      action: memberActivityLabel(row.action, row.details),
+      projectTitle: row.projectTitle || row.details,
+      details: "",
+    })),
+  });
 }
