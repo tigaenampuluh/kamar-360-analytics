@@ -53,6 +53,8 @@ type Status = "On Going" | "Delay" | "Pending" | "Revisi" | "Done";
 type Priority = "High" | "Medium" | "Low";
 
 const WIB_TIME_ZONE = "Asia/Jakarta";
+const AUTH_IDLE_TIMEOUT_MS = 10 * 60 * 1_000;
+const AUTH_ACTIVITY_STORAGE_KEY = "360-auth-last-activity";
 
 type WibDateParts = {
   year: number;
@@ -97,6 +99,95 @@ function useWibClock(intervalMs = 1_000) {
     return () => window.clearInterval(timer);
   }, [intervalMs]);
   return now;
+}
+
+function useIdleLogout(enabled: boolean, onIdle: () => void) {
+  const onIdleRef = useRef(onIdle);
+
+  useEffect(() => {
+    onIdleRef.current = onIdle;
+  }, [onIdle]);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const now = Date.now();
+    let lastActivity = now;
+    let lastPersistedAt = now;
+
+    try {
+      const storedActivity = Number(window.localStorage.getItem(AUTH_ACTIVITY_STORAGE_KEY));
+      if (Number.isFinite(storedActivity) && storedActivity > 0) {
+        lastActivity = storedActivity;
+        lastPersistedAt = storedActivity;
+      } else {
+        window.localStorage.setItem(AUTH_ACTIVITY_STORAGE_KEY, String(now));
+      }
+    } catch {
+      // The in-memory timer still works if browser storage is unavailable.
+    }
+
+    const checkForIdle = () => {
+      try {
+        const sharedActivity = Number(window.localStorage.getItem(AUTH_ACTIVITY_STORAGE_KEY));
+        if (Number.isFinite(sharedActivity) && sharedActivity > lastActivity) lastActivity = sharedActivity;
+      } catch {
+        // Keep using the most recent in-memory activity timestamp.
+      }
+
+      if (Date.now() - lastActivity < AUTH_IDLE_TIMEOUT_MS) return false;
+      onIdleRef.current();
+      return true;
+    };
+
+    const recordActivity = () => {
+      const activityAt = Date.now();
+      lastActivity = activityAt;
+      if (activityAt - lastPersistedAt < 5_000) return;
+      lastPersistedAt = activityAt;
+      try {
+        window.localStorage.setItem(AUTH_ACTIVITY_STORAGE_KEY, String(activityAt));
+      } catch {
+        // The local tab remains protected by the in-memory timer.
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden || checkForIdle()) return;
+      recordActivity();
+    };
+
+    const handleSharedActivity = (event: StorageEvent) => {
+      if (event.key !== AUTH_ACTIVITY_STORAGE_KEY) return;
+      if (event.newValue === null) {
+        onIdleRef.current();
+        return;
+      }
+      const sharedActivity = Number(event.newValue);
+      if (Number.isFinite(sharedActivity) && sharedActivity > 0) lastActivity = sharedActivity;
+    };
+
+    window.addEventListener("pointerdown", recordActivity, { passive: true });
+    window.addEventListener("keydown", recordActivity);
+    window.addEventListener("touchstart", recordActivity, { passive: true });
+    window.addEventListener("scroll", recordActivity, { passive: true });
+    window.addEventListener("focus", handleVisibility);
+    window.addEventListener("storage", handleSharedActivity);
+    document.addEventListener("visibilitychange", handleVisibility);
+    const idleTimer = window.setInterval(checkForIdle, 15_000);
+    checkForIdle();
+
+    return () => {
+      window.clearInterval(idleTimer);
+      window.removeEventListener("pointerdown", recordActivity);
+      window.removeEventListener("keydown", recordActivity);
+      window.removeEventListener("touchstart", recordActivity);
+      window.removeEventListener("scroll", recordActivity);
+      window.removeEventListener("focus", handleVisibility);
+      window.removeEventListener("storage", handleSharedActivity);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [enabled]);
 }
 
 function greetingForWibHour(hour: number) {
@@ -1535,10 +1626,17 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
         setNotice(result.message || "Permintaan berhasil dikirim. Jika email terdaftar, admin akan menerima permintaan Anda.");
         return;
       }
-      const result = mode === "login"
-        ? await authClient.signIn.email({ email: normalizedEmail, password, rememberMe: true })
-        : await authClient.signUp.email({ email: normalizedEmail, password, name: name.trim() });
-      if (result.error) throw new Error(result.error.message || "Autentikasi gagal. Periksa data Anda.");
+      if (mode === "login") {
+        const result = await authClient.signIn.email({ email: normalizedEmail, password, rememberMe: false });
+        if (result.error) throw new Error(result.error.message || "Autentikasi gagal. Periksa data Anda.");
+      } else {
+        const registration = await authClient.signUp.email({ email: normalizedEmail, password, name: name.trim() });
+        if (registration.error) throw new Error(registration.error.message || "Pendaftaran gagal. Periksa data Anda.");
+        await authClient.signOut();
+        const browserSession = await authClient.signIn.email({ email: normalizedEmail, password, rememberMe: false });
+        if (browserSession.error) throw new Error(browserSession.error.message || "Akun berhasil dibuat, tetapi sesi belum dapat dimulai.");
+      }
+      window.localStorage.setItem(AUTH_ACTIVITY_STORAGE_KEY, String(Date.now()));
       window.location.reload();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Permintaan belum dapat diproses.");
@@ -1559,7 +1657,7 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
         <div className="absolute inset-0 grid-paper opacity-[.035]" />
         <div className="relative flex items-center gap-4"><BrandMark className="h-14 w-14" /><div><div className="font-serif text-2xl font-semibold">360 - Center of Research</div><div className="mt-1 text-[10px] uppercase tracking-[.2em] text-[#9eb0bc]">Project Workspace</div></div></div>
         <div className="relative my-auto max-w-xl"><div className="mb-5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.22em] text-[#e9a17d]"><span className="h-px w-8 bg-[#e9a17d]" />Track · Schedule · Complete · Archive</div><h1 className="font-serif text-5xl font-semibold leading-[1.08] tracking-[-.03em]">Satu ruang untuk setiap proses riset yang berarti.</h1><p className="mt-6 max-w-lg text-base leading-7 text-[#b6c3cb]">Jaga project, agenda, aset, dan keputusan tim tetap tersambung—dari brief pertama hingga laporan final.</p></div>
-        <div className="relative flex items-center gap-3 text-xs text-[#8499a7]"><ShieldCheck size={16} className="text-[#e9a17d]" />Workspace privat dengan sesi terenkripsi</div>
+        <div className="relative flex items-center gap-3 text-xs text-[#8499a7]"><ShieldCheck size={16} className="text-[#e9a17d]" />Sesi berakhir saat browser ditutup atau 10 menit tanpa aktivitas</div>
       </section>
       <section className="flex items-center justify-center px-5 py-12">
         <div className="w-full max-w-md">
@@ -1592,6 +1690,7 @@ export default function Home() {
   const [profile, setProfile] = useState<ProfileData>({ name: "Angga Demo", email: "angga.demo@ruangriset.id", role: "Research Lead", image: null });
   const [isAdmin, setIsAdmin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const idleLogoutStarted = useRef(false);
 
   useEffect(() => {
     const storedDemoMode = window.sessionStorage.getItem("ruang-riset-demo") === "true";
@@ -1629,10 +1728,46 @@ export default function Home() {
     return () => { cancelled = true; };
   }, [session]);
 
-  if (isPending || !demoReady) return <div className="grid min-h-screen place-items-center bg-[#f5f3ed] text-[#e76f36]"><LoaderCircle className="animate-spin" size={28} /></div>;
-  if (!session && !demoMode) return <AuthScreen demoEnabled={process.env.NEXT_PUBLIC_ENABLE_DEMO !== "false"} onEnterDemo={() => { window.sessionStorage.setItem("ruang-riset-demo", "true"); setProjects(initialProjects); setDemoMode(true); }} />;
+  const logoutAfterIdle = useCallback(() => {
+    if (idleLogoutStarted.current) return;
+    idleLogoutStarted.current = true;
+    try {
+      window.localStorage.removeItem(AUTH_ACTIVITY_STORAGE_KEY);
+    } catch {
+      // Continue signing out when storage is unavailable.
+    }
+    if (session) {
+      void authClient.signOut().finally(() => window.location.reload());
+      return;
+    }
+    window.sessionStorage.removeItem("ruang-riset-demo");
+    window.location.reload();
+  }, [session]);
 
-  const logout = () => { if (!session) { window.sessionStorage.removeItem("ruang-riset-demo"); setProjects([]); setDemoMode(false); setActive("dashboard"); return; } void authClient.signOut().then(() => window.location.reload()); };
+  useIdleLogout(Boolean(session) || demoMode, logoutAfterIdle);
+
+  useEffect(() => {
+    if (!session && !demoMode) idleLogoutStarted.current = false;
+  }, [session, demoMode]);
+
+  if (isPending || !demoReady) return <div className="grid min-h-screen place-items-center bg-[#f5f3ed] text-[#e76f36]"><LoaderCircle className="animate-spin" size={28} /></div>;
+  if (!session && !demoMode) return <AuthScreen demoEnabled={process.env.NEXT_PUBLIC_ENABLE_DEMO !== "false"} onEnterDemo={() => { window.sessionStorage.setItem("ruang-riset-demo", "true"); window.localStorage.setItem(AUTH_ACTIVITY_STORAGE_KEY, String(Date.now())); setProjects(initialProjects); setDemoMode(true); }} />;
+
+  const logout = () => {
+    try {
+      window.localStorage.removeItem(AUTH_ACTIVITY_STORAGE_KEY);
+    } catch {
+      // Continue signing out when storage is unavailable.
+    }
+    if (!session) {
+      window.sessionStorage.removeItem("ruang-riset-demo");
+      setProjects([]);
+      setDemoMode(false);
+      setActive("dashboard");
+      return;
+    }
+    void authClient.signOut().then(() => window.location.reload());
+  };
   const saveProfile = async (nextProfile: ProfileData) => {
     if (!session) {
       setProfile(nextProfile);
