@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm";
-import { boolean, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, primaryKey, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).defaultNow().notNull();
@@ -62,6 +62,7 @@ export const projects = pgTable("projects", {
   description: text("description").notNull().default(""),
   pic: text("pic").notNull(),
   picInitials: text("pic_initials").notNull(),
+  primaryPicUserId: text("primary_pic_user_id").references(() => user.id, { onDelete: "set null" }),
   deadline: timestamp("deadline", { withTimezone: true }).notNull(),
   doneAt: timestamp("done_at", { withTimezone: true }),
   status: text("status", { enum: ["On Going", "Delay", "Pending", "Revisi", "Done"] }).notNull().default("Pending"),
@@ -74,7 +75,59 @@ export const projects = pgTable("projects", {
   index("idx_projects_status_deadline").on(table.status, table.deadline),
   index("idx_projects_status_done_at").on(table.status, table.doneAt),
   index("idx_projects_pic").on(table.pic),
+  index("idx_projects_primary_pic_user_id").on(table.primaryPicUserId),
   index("idx_projects_category").on(table.category),
+]);
+
+export const projectMemberships = pgTable("project_memberships", {
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  role: text("role", { enum: ["Lead", "Anggota", "Viewer"] }).notNull().default("Anggota"),
+  addedBy: text("added_by").references(() => user.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+}, (table) => [
+  primaryKey({ columns: [table.projectId, table.userId] }),
+  index("idx_project_memberships_user_id").on(table.userId),
+  index("idx_project_memberships_project_role").on(table.projectId, table.role),
+]);
+
+export const projectComments = pgTable("project_comments", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  authorId: text("author_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (table) => [
+  index("idx_project_comments_project_created").on(table.projectId, table.createdAt),
+  index("idx_project_comments_author_id").on(table.authorId),
+]);
+
+export const projectCommentMentions = pgTable("project_comment_mentions", {
+  commentId: integer("comment_id").notNull().references(() => projectComments.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  createdAt: createdAt(),
+}, (table) => [
+  primaryKey({ columns: [table.commentId, table.userId] }),
+  index("idx_project_comment_mentions_user_id").on(table.userId),
+]);
+
+export const projectCompletionApprovals = pgTable("project_completion_approvals", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  requestedBy: text("requested_by").notNull().references(() => user.id, { onDelete: "cascade" }),
+  status: text("status", { enum: ["pending", "approved", "rejected"] }).notNull().default("pending"),
+  requestNote: text("request_note").notNull().default(""),
+  reviewedBy: text("reviewed_by").references(() => user.id, { onDelete: "set null" }),
+  reviewNote: text("review_note").notNull().default(""),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+}, (table) => [
+  uniqueIndex("idx_project_completion_approvals_pending")
+    .on(table.projectId)
+    .where(sql`${table.status} = 'pending'`),
+  index("idx_project_completion_approvals_project_requested").on(table.projectId, table.requestedAt),
+  index("idx_project_completion_approvals_requested_by").on(table.requestedBy),
 ]);
 
 export const agendas = pgTable("agendas", {
@@ -132,7 +185,7 @@ export const notifications = pgTable("notifications", {
   userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
   agendaId: integer("agenda_id").references(() => agendas.id, { onDelete: "cascade" }),
-  kind: text("kind", { enum: ["deadline", "project", "agenda", "activity"] }).notNull(),
+  kind: text("kind", { enum: ["deadline", "project", "agenda", "activity", "assignment", "mention", "approval"] }).notNull(),
   title: text("title").notNull(),
   message: text("message").notNull(),
   targetView: text("target_view", { enum: ["dashboard", "tracker", "calendar", "library", "activity", "profile"] }).notNull().default("dashboard"),
@@ -175,6 +228,9 @@ export const userRelations = relations(user, ({ many }) => ({
   accounts: many(account),
   activities: many(activityLogs),
   notifications: many(notifications),
+  projectMemberships: many(projectMemberships, { relationName: "projectMember" }),
+  projectComments: many(projectComments),
+  projectMentions: many(projectCommentMentions),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -185,11 +241,38 @@ export const accountRelations = relations(account, ({ one }) => ({
   user: one(user, { fields: [account.userId], references: [user.id] }),
 }));
 
-export const projectRelations = relations(projects, ({ many }) => ({
+export const projectRelations = relations(projects, ({ one, many }) => ({
+  primaryPic: one(user, { fields: [projects.primaryPicUserId], references: [user.id] }),
+  members: many(projectMemberships),
+  comments: many(projectComments),
+  completionApprovals: many(projectCompletionApprovals),
   agendas: many(agendas),
   assets: many(assets),
   activities: many(activityLogs),
   notifications: many(notifications),
+}));
+
+export const projectMembershipRelations = relations(projectMemberships, ({ one }) => ({
+  project: one(projects, { fields: [projectMemberships.projectId], references: [projects.id] }),
+  member: one(user, { relationName: "projectMember", fields: [projectMemberships.userId], references: [user.id] }),
+  addedByUser: one(user, { relationName: "projectMemberAddedBy", fields: [projectMemberships.addedBy], references: [user.id] }),
+}));
+
+export const projectCommentRelations = relations(projectComments, ({ one, many }) => ({
+  project: one(projects, { fields: [projectComments.projectId], references: [projects.id] }),
+  author: one(user, { fields: [projectComments.authorId], references: [user.id] }),
+  mentions: many(projectCommentMentions),
+}));
+
+export const projectCommentMentionRelations = relations(projectCommentMentions, ({ one }) => ({
+  comment: one(projectComments, { fields: [projectCommentMentions.commentId], references: [projectComments.id] }),
+  mentionedUser: one(user, { fields: [projectCommentMentions.userId], references: [user.id] }),
+}));
+
+export const projectCompletionApprovalRelations = relations(projectCompletionApprovals, ({ one }) => ({
+  project: one(projects, { fields: [projectCompletionApprovals.projectId], references: [projects.id] }),
+  requester: one(user, { relationName: "completionRequester", fields: [projectCompletionApprovals.requestedBy], references: [user.id] }),
+  reviewer: one(user, { relationName: "completionReviewer", fields: [projectCompletionApprovals.reviewedBy], references: [user.id] }),
 }));
 
 export const agendaRelations = relations(agendas, ({ one }) => ({

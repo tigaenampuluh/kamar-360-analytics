@@ -1,6 +1,9 @@
 import { drizzle } from "drizzle-orm/node-postgres";
+import { loadEnvConfig } from "@next/env";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
+
+loadEnvConfig(process.cwd());
 
 const databaseUrl = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL;
 

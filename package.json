@@ -1,6 +1,6 @@
 {
   "name": "ruang-riset",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -32,6 +32,7 @@
     "zod": "^4.1.0"
   },
   "devDependencies": {
+    "@next/env": "15.5.23",
     "@tailwindcss/postcss": "^4.0.17",
     "@types/node": "^22.13.14",
     "@types/pg": "^8.15.0",

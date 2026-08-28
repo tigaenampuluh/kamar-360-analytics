@@ -30,9 +30,11 @@ import {
   LogIn,
   MailPlus,
   Menu,
+  MessageSquare,
   MoreHorizontal,
   Plus,
   Search,
+  Send,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -52,11 +54,16 @@ import packageInfo from "@/package.json";
 type View = "dashboard" | "tracker" | "calendar" | "library" | "activity" | "admin" | "profile";
 type Status = "On Going" | "Delay" | "Pending" | "Revisi" | "Done";
 type Priority = "High" | "Medium" | "Low";
+type ProjectMemberRole = "Lead" | "Anggota" | "Viewer";
 
 const WIB_TIME_ZONE = "Asia/Jakarta";
 const APP_VERSION = packageInfo.version;
 const AUTH_IDLE_TIMEOUT_MS = 10 * 60 * 1_000;
 const AUTH_ACTIVITY_STORAGE_KEY = "360-auth-last-activity";
+const AUTH_TABS_STORAGE_KEY = "360-auth-open-tabs";
+const AUTH_LAST_TAB_CLOSED_KEY = "360-auth-last-tab-closed";
+const AUTH_TAB_ID_KEY = "360-auth-tab-id";
+const AUTH_TAB_STALE_MS = AUTH_IDLE_TIMEOUT_MS + 2 * 60_000;
 
 type WibDateParts = {
   year: number;
@@ -115,13 +122,49 @@ function useIdleLogout(enabled: boolean, onIdle: () => void) {
 
     const now = Date.now();
     let lastActivity = now;
-    let lastPersistedAt = now;
+
+    type TabRegistry = Record<string, number>;
+    const readTabs = () => {
+      try {
+        const parsed = JSON.parse(window.localStorage.getItem(AUTH_TABS_STORAGE_KEY) || "{}") as TabRegistry;
+        return Object.fromEntries(Object.entries(parsed).filter(([, heartbeat]) => Date.now() - Number(heartbeat) < AUTH_TAB_STALE_MS));
+      } catch {
+        return {} as TabRegistry;
+      }
+    };
+    const writeTabs = (tabs: TabRegistry) => {
+      try {
+        window.localStorage.setItem(AUTH_TABS_STORAGE_KEY, JSON.stringify(tabs));
+      } catch {
+        // Visibility-based logout still works without the cross-tab registry.
+      }
+    };
+    const navigation = window.performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    const existingTabs = readTabs();
+    const storedTabId = window.sessionStorage.getItem(AUTH_TAB_ID_KEY);
+    const tabId = !storedTabId || (existingTabs[storedTabId] && navigation?.type !== "reload") ? window.crypto.randomUUID() : storedTabId;
+    window.sessionStorage.setItem(AUTH_TAB_ID_KEY, tabId);
+    let lastTabClosedAt = 0;
+    try {
+      lastTabClosedAt = Number(window.localStorage.getItem(AUTH_LAST_TAB_CLOSED_KEY));
+    } catch {
+      // Continue with the visibility timer.
+    }
+    if (Object.keys(existingTabs).length === 0 && lastTabClosedAt > 0 && navigation?.type !== "reload") {
+      onIdleRef.current();
+      return;
+    }
+    writeTabs({ ...existingTabs, [tabId]: now });
+    try {
+      window.localStorage.removeItem(AUTH_LAST_TAB_CLOSED_KEY);
+    } catch {
+      // Continue with the visibility timer.
+    }
 
     try {
       const storedActivity = Number(window.localStorage.getItem(AUTH_ACTIVITY_STORAGE_KEY));
       if (Number.isFinite(storedActivity) && storedActivity > 0) {
         lastActivity = storedActivity;
-        lastPersistedAt = storedActivity;
       } else {
         window.localStorage.setItem(AUTH_ACTIVITY_STORAGE_KEY, String(now));
       }
@@ -142,11 +185,9 @@ function useIdleLogout(enabled: boolean, onIdle: () => void) {
       return true;
     };
 
-    const recordActivity = () => {
+    const recordVisibleTab = () => {
       const activityAt = Date.now();
       lastActivity = activityAt;
-      if (activityAt - lastPersistedAt < 5_000) return;
-      lastPersistedAt = activityAt;
       try {
         window.localStorage.setItem(AUTH_ACTIVITY_STORAGE_KEY, String(activityAt));
       } catch {
@@ -156,7 +197,7 @@ function useIdleLogout(enabled: boolean, onIdle: () => void) {
 
     const handleVisibility = () => {
       if (document.hidden || checkForIdle()) return;
-      recordActivity();
+      recordVisibleTab();
     };
 
     const handleSharedActivity = (event: StorageEvent) => {
@@ -169,24 +210,39 @@ function useIdleLogout(enabled: boolean, onIdle: () => void) {
       if (Number.isFinite(sharedActivity) && sharedActivity > 0) lastActivity = sharedActivity;
     };
 
-    window.addEventListener("pointerdown", recordActivity, { passive: true });
-    window.addEventListener("keydown", recordActivity);
-    window.addEventListener("touchstart", recordActivity, { passive: true });
-    window.addEventListener("scroll", recordActivity, { passive: true });
+    const heartbeat = () => {
+      const tabs = readTabs();
+      writeTabs({ ...tabs, [tabId]: Date.now() });
+      if (!document.hidden) recordVisibleTab();
+      else checkForIdle();
+    };
+
+    const handlePageHide = (event: PageTransitionEvent) => {
+      if (event.persisted) return;
+      const tabs = readTabs();
+      delete tabs[tabId];
+      writeTabs(tabs);
+      if (Object.keys(tabs).length === 0) {
+        try {
+          window.localStorage.setItem(AUTH_LAST_TAB_CLOSED_KEY, String(Date.now()));
+        } catch {
+          // Reopening the app is still guarded by the 10-minute visibility timer.
+        }
+      }
+    };
+
     window.addEventListener("focus", handleVisibility);
     window.addEventListener("storage", handleSharedActivity);
+    window.addEventListener("pagehide", handlePageHide);
     document.addEventListener("visibilitychange", handleVisibility);
-    const idleTimer = window.setInterval(checkForIdle, 15_000);
-    checkForIdle();
+    const idleTimer = window.setInterval(heartbeat, 15_000);
+    if (!checkForIdle() && !document.hidden) recordVisibleTab();
 
     return () => {
       window.clearInterval(idleTimer);
-      window.removeEventListener("pointerdown", recordActivity);
-      window.removeEventListener("keydown", recordActivity);
-      window.removeEventListener("touchstart", recordActivity);
-      window.removeEventListener("scroll", recordActivity);
       window.removeEventListener("focus", handleVisibility);
       window.removeEventListener("storage", handleSharedActivity);
+      window.removeEventListener("pagehide", handlePageHide);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [enabled]);
@@ -212,6 +268,62 @@ type Project = {
   completedAtIso?: string;
   note: string;
   workingDocLink?: string;
+  primaryPicUserId?: string | null;
+  members?: ProjectMember[];
+};
+
+type WorkspaceMemberOption = {
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
+  workspaceRole: "Admin" | "Anggota";
+};
+
+type ProjectMember = {
+  userId: string;
+  name: string;
+  email: string;
+  image: string | null;
+  role: ProjectMemberRole;
+};
+
+type ProjectComment = {
+  id: number;
+  body: string;
+  createdAt: string;
+  authorId: string;
+  authorName: string;
+  authorImage: string | null;
+  mentionUserIds: string[];
+};
+
+type ProjectApproval = {
+  id: number;
+  status: "pending" | "approved" | "rejected";
+  requestNote: string;
+  reviewNote: string | null;
+  requestedAt: string;
+  reviewedAt: string | null;
+  requestedByName: string;
+  reviewedByName: string | null;
+};
+
+type ProjectPermissions = {
+  role: "Admin" | ProjectMemberRole | null;
+  canEdit: boolean;
+  canManageMembers: boolean;
+  canComment: boolean;
+  canRequestCompletion: boolean;
+  canApproveCompletion: boolean;
+  canDelete: boolean;
+};
+
+type ProjectCollaboration = {
+  members: ProjectMember[];
+  comments: ProjectComment[];
+  approval: ProjectApproval | null;
+  permissions: ProjectPermissions;
 };
 
 type ApiProject = Omit<Project, "deadline" | "note" | "initials" | "completedAtIso" | "workingDocLink"> & {
@@ -245,6 +357,8 @@ function toProjectPayload(project: Project) {
     priority: project.priority,
     category: project.category,
     workingDocLink: project.workingDocLink || null,
+    primaryPicUserId: project.primaryPicUserId ?? null,
+    memberAssignments: (project.members ?? []).map((member) => ({ userId: member.userId, role: member.role })),
   };
 }
 
@@ -426,7 +540,7 @@ type NotificationAlert = {
   description: string;
   time: string;
   view: View;
-  kind: "deadline" | "project" | "agenda" | "activity";
+  kind: "deadline" | "project" | "agenda" | "activity" | "assignment" | "mention" | "approval";
   read: boolean;
 };
 
@@ -451,6 +565,9 @@ const notificationAppearance = {
   project: { icon: FolderOpen, tone: "bg-[#e8efe9] text-[#3f7650]" },
   agenda: { icon: CalendarDays, tone: "bg-[#f7efd9] text-[#a87318]" },
   activity: { icon: Activity, tone: "bg-[#e6f0f7] text-[#3578a8]" },
+  assignment: { icon: UserPlus, tone: "bg-[#e8efe9] text-[#3f7650]" },
+  mention: { icon: Users, tone: "bg-[#eee8f7] text-[#73539a]" },
+  approval: { icon: Check, tone: "bg-[#f7efd9] text-[#a87318]" },
 } satisfies Record<NotificationAlert["kind"], { icon: typeof Bell; tone: string }>;
 
 function notificationTime(value: string) {
@@ -795,25 +912,78 @@ function Dashboard({ projects, goTo, backendEnabled }: { projects: Project[]; go
   );
 }
 
-function AddProjectDialog({ open, defaultDeadline, onOpenChange, onAdd }: { open: boolean; defaultDeadline: string; onOpenChange: (v: boolean) => void; onAdd: (project: Project) => void }) {
+function projectMembersFromAssignments(workspaceMembers: WorkspaceMemberOption[], assignments: Record<string, ProjectMemberRole>) {
+  return Object.entries(assignments).flatMap(([userId, role]) => {
+    const member = workspaceMembers.find((candidate) => candidate.id === userId);
+    return member ? [{ userId, name: member.name, email: member.email, image: member.image, role }] : [];
+  });
+}
+
+function ProjectPeopleEditor({ workspaceMembers, primaryPicUserId, manualPic, assignments, onPrimaryChange, onManualPicChange, onAssignmentsChange }: {
+  workspaceMembers: WorkspaceMemberOption[];
+  primaryPicUserId: string | null;
+  manualPic: string;
+  assignments: Record<string, ProjectMemberRole>;
+  onPrimaryChange: (userId: string | null) => void;
+  onManualPicChange: (name: string) => void;
+  onAssignmentsChange: (assignments: Record<string, ProjectMemberRole>) => void;
+}) {
+  const selectPrimary = (value: string) => {
+    if (value === "manual") {
+      onPrimaryChange(null);
+      return;
+    }
+    onPrimaryChange(value);
+    onAssignmentsChange({ ...assignments, [value]: "Lead" });
+  };
+  const toggleMember = (memberId: string, checked: boolean) => {
+    const next = { ...assignments };
+    if (checked) next[memberId] = memberId === primaryPicUserId ? "Lead" : "Anggota";
+    else if (memberId !== primaryPicUserId) delete next[memberId];
+    onAssignmentsChange(next);
+  };
+  return <div className="space-y-4">
+    <label className="block text-xs font-bold text-[#59656c]">PIC utama<select value={primaryPicUserId || "manual"} onChange={(event) => selectPrimary(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal"><option value="manual">Lainnya — isi manual</option>{workspaceMembers.map((member) => <option key={member.id} value={member.id}>{member.name} · {member.workspaceRole}</option>)}</select></label>
+    {!primaryPicUserId && <label className="block text-xs font-bold text-[#59656c]">Nama PIC manual<Input className="mt-2 font-normal" value={manualPic} onChange={(event) => onManualPicChange(event.target.value)} placeholder="Nama PIC di luar akun anggota" /></label>}
+    <div><div className="text-xs font-bold text-[#59656c]">Anggota project</div><p className="mt-1 text-[11px] text-[#8a9194]">Pilih beberapa akun dan tentukan role per project.</p><div className="mt-2 max-h-48 space-y-2 overflow-y-auto border border-[#e2dfd7] bg-[#faf9f5] p-2 thin-scrollbar">{workspaceMembers.map((member) => { const selected = Boolean(assignments[member.id]); const isPrimary = member.id === primaryPicUserId; return <div key={member.id} className="flex items-center gap-2 bg-white px-2.5 py-2"><input type="checkbox" checked={selected || isPrimary} disabled={isPrimary} onChange={(event) => toggleMember(member.id, event.target.checked)} className="accent-[#e76f36]" /><MiniAvatar initials={memberInitials(member.name)} image={member.image} name={member.name} /><div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold">{member.name}</div><div className="truncate text-[10px] text-[#8a9194]">{member.email}</div></div>{(selected || isPrimary) && <select aria-label={`Role ${member.name}`} value={isPrimary ? "Lead" : assignments[member.id]} disabled={isPrimary} onChange={(event) => onAssignmentsChange({ ...assignments, [member.id]: event.target.value as ProjectMemberRole })} className="h-8 rounded border border-[#d9d7cf] bg-white px-2 text-[11px]"><option>Lead</option><option>Anggota</option><option>Viewer</option></select>}</div>; })}{workspaceMembers.length === 0 && <div className="px-3 py-5 text-center text-xs text-[#8a9194]">Belum ada akun anggota yang dapat dipilih.</div>}</div></div>
+  </div>;
+}
+
+function AddProjectDialog({ open, defaultDeadline, workspaceMembers, currentUserEmail, onOpenChange, onAdd }: { open: boolean; defaultDeadline: string; workspaceMembers: WorkspaceMemberOption[]; currentUserEmail: string; onOpenChange: (v: boolean) => void; onAdd: (project: Project) => void }) {
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState<Status>("On Going");
-  const [pic, setPic] = useState("Angga Ramadhan");
+  const [primaryPicUserId, setPrimaryPicUserId] = useState<string | null>(null);
+  const [manualPic, setManualPic] = useState("Angga Ramadhan");
+  const [assignments, setAssignments] = useState<Record<string, ProjectMemberRole>>({});
   const [deadline, setDeadline] = useState(defaultDeadline);
   const [priority, setPriority] = useState<Priority>("Medium");
   const [category, setCategory] = useState("Desk Research");
   const [note, setNote] = useState("");
   const [workingDocLink, setWorkingDocLink] = useState("");
-  useEffect(() => { if (open) setDeadline(defaultDeadline); }, [defaultDeadline, open]);
+  useEffect(() => {
+    if (!open) return;
+    setDeadline(defaultDeadline);
+    const currentMember = workspaceMembers.find((member) => member.email === currentUserEmail);
+    if (currentMember) {
+      setPrimaryPicUserId(currentMember.id);
+      setManualPic(currentMember.name);
+      setAssignments({ [currentMember.id]: "Lead" });
+    }
+  }, [currentUserEmail, defaultDeadline, open, workspaceMembers]);
   const submit = () => {
-    if (!title.trim()) return;
+    const selectedPic = workspaceMembers.find((member) => member.id === primaryPicUserId);
+    const pic = selectedPic?.name || manualPic.trim();
+    if (!title.trim() || !pic) return;
     const initials = pic.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
     const deadlineIso = `${deadline}T17:00:00+07:00`;
     const deadlineLabel = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short" }).format(new Date(deadlineIso)).replace(".", "");
-    onAdd({ id: Date.now(), title: title.trim(), status, priority, category, pic, initials, deadline: deadlineLabel, deadlineIso, completedAtIso: status === "Done" ? new Date().toISOString() : undefined, note: note.trim() || "Belum ada catatan project.", workingDocLink: workingDocLink.trim() || undefined });
+    const normalizedAssignments = primaryPicUserId ? { ...assignments, [primaryPicUserId]: "Lead" as const } : assignments;
+    onAdd({ id: Date.now(), title: title.trim(), status, priority, category, pic, initials, primaryPicUserId, members: projectMembersFromAssignments(workspaceMembers, normalizedAssignments), deadline: deadlineLabel, deadlineIso, completedAtIso: status === "Done" ? new Date().toISOString() : undefined, note: note.trim() || "Belum ada catatan project.", workingDocLink: workingDocLink.trim() || undefined });
     setTitle("");
     setStatus("On Going");
-    setPic("Angga Ramadhan");
+    setPrimaryPicUserId(null);
+    setManualPic("Angga Ramadhan");
+    setAssignments({});
     setDeadline(defaultDeadline);
     setPriority("Medium");
     setCategory("Desk Research");
@@ -821,22 +991,37 @@ function AddProjectDialog({ open, defaultDeadline, onOpenChange, onAdd }: { open
     setWorkingDocLink("");
     onOpenChange(false);
   };
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>Tambah project baru</DialogTitle><DialogDescription>Lengkapi informasi utama agar project siap dilacak oleh seluruh tim.</DialogDescription></DialogHeader><div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1 thin-scrollbar"><label className="block text-xs font-bold text-[#59656c]">Nama project<Input className="mt-2" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Contoh: Riset Lanskap Industri 2026" autoFocus /></label><div className="grid gap-4 sm:grid-cols-2"><label className="text-xs font-bold text-[#59656c]">Status<select value={status} onChange={(e) => setStatus(e.target.value as Status)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal">{Object.keys(statusMeta).map((s) => <option key={s}>{s}</option>)}</select></label><label className="text-xs font-bold text-[#59656c]">PIC<select value={pic} onChange={(e) => setPic(e.target.value)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal"><option>Angga Ramadhan</option><option>Nadia Putri</option><option>Arga Wibawa</option><option>Dita Anjani</option><option>Fikri Ramadhan</option><option>Maya Kirana</option></select></label><label className="text-xs font-bold text-[#59656c]">Deadline<Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="mt-2 font-normal" required /></label><label className="text-xs font-bold text-[#59656c]">Prioritas<select value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal"><option>High</option><option>Medium</option><option>Low</option></select></label></div><label className="block text-xs font-bold text-[#59656c]">Kategori<Input value={category} onChange={(e) => setCategory(e.target.value)} className="mt-2" placeholder="Contoh: Brand Research" required /></label><label className="block text-xs font-bold text-[#59656c]">Working document<Input type="url" value={workingDocLink} onChange={(e) => setWorkingDocLink(e.target.value)} className="mt-2" placeholder="https://docs.google.com/..." /></label><label className="block text-xs font-bold text-[#59656c]">Catatan<textarea value={note} onChange={(e) => setNote(e.target.value)} className="mt-2 min-h-24 w-full resize-none rounded-md border border-[#d9d7cf] bg-white p-3 text-sm outline-none focus:border-[#e76f36]" placeholder="Tambahkan konteks singkat untuk tim..." /></label><div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button><Button onClick={submit} disabled={!title.trim() || !deadline || !category.trim()}><Plus size={16} /> Buat project</Button></div></div></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>Tambah project baru</DialogTitle><DialogDescription>Lengkapi informasi utama, PIC, dan anggota yang akan berkolaborasi.</DialogDescription></DialogHeader><div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1 thin-scrollbar"><label className="block text-xs font-bold text-[#59656c]">Nama project<Input className="mt-2" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Contoh: Riset Lanskap Industri 2026" autoFocus /></label><div className="grid gap-4 sm:grid-cols-2"><label className="text-xs font-bold text-[#59656c]">Status<select value={status} onChange={(e) => setStatus(e.target.value as Status)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal">{Object.keys(statusMeta).map((s) => <option key={s}>{s}</option>)}</select></label><label className="text-xs font-bold text-[#59656c]">Deadline<Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="mt-2 font-normal" required /></label><label className="text-xs font-bold text-[#59656c]">Prioritas<select value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal"><option>High</option><option>Medium</option><option>Low</option></select></label><label className="text-xs font-bold text-[#59656c]">Kategori<Input value={category} onChange={(e) => setCategory(e.target.value)} className="mt-2 font-normal" placeholder="Contoh: Brand Research" required /></label></div><ProjectPeopleEditor workspaceMembers={workspaceMembers} primaryPicUserId={primaryPicUserId} manualPic={manualPic} assignments={assignments} onPrimaryChange={setPrimaryPicUserId} onManualPicChange={setManualPic} onAssignmentsChange={setAssignments} /><label className="block text-xs font-bold text-[#59656c]">Working document<Input type="url" value={workingDocLink} onChange={(e) => setWorkingDocLink(e.target.value)} className="mt-2" placeholder="https://docs.google.com/..." /></label><label className="block text-xs font-bold text-[#59656c]">Catatan<textarea value={note} onChange={(e) => setNote(e.target.value)} className="mt-2 min-h-24 w-full resize-none rounded-md border border-[#d9d7cf] bg-white p-3 text-sm outline-none focus:border-[#e76f36]" placeholder="Tambahkan konteks singkat untuk tim..." /></label><div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button><Button onClick={submit} disabled={!title.trim() || !deadline || !category.trim() || (!primaryPicUserId && !manualPic.trim())}><Plus size={16} /> Buat project</Button></div></div></DialogContent></Dialog>;
 }
 
-function EditProjectDialog({ project, open, onOpenChange, onSave }: { project: Project | null; open: boolean; onOpenChange: (v: boolean) => void; onSave: (project: Project) => void }) {
+function EditProjectDialog({ project, open, workspaceMembers, onOpenChange, onSave }: { project: Project | null; open: boolean; workspaceMembers: WorkspaceMemberOption[]; onOpenChange: (v: boolean) => void; onSave: (project: Project) => void }) {
   const [draft, setDraft] = useState<Project | null>(project);
-  useEffect(() => { if (project && open) setDraft(project); }, [project, open]);
+  const [assignments, setAssignments] = useState<Record<string, ProjectMemberRole>>({});
+  useEffect(() => {
+    if (!project || !open) return;
+    setDraft(project);
+    setAssignments(Object.fromEntries((project.members ?? []).map((member) => [member.userId, member.role])));
+  }, [project, open]);
   if (!draft) return null;
   const update = <K extends keyof Project>(key: K, value: Project[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
+  const changePrimaryPic = (userId: string | null) => {
+    update("primaryPicUserId", userId);
+    if (!userId) return;
+    const member = workspaceMembers.find((candidate) => candidate.id === userId);
+    if (!member) return;
+    update("pic", member.name);
+    update("initials", memberInitials(member.name));
+    setAssignments((current) => ({ ...current, [userId]: "Lead" }));
+  };
   const save = () => {
     if (!draft.title.trim() || !draft.category.trim()) return;
     const deadlineIso = draft.deadlineIso || "2026-09-15T17:00:00+07:00";
     const deadline = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short" }).format(new Date(deadlineIso)).replace(".", "");
-    onSave({ ...draft, title: draft.title.trim(), category: draft.category.trim(), deadline });
+    const normalizedAssignments = draft.primaryPicUserId ? { ...assignments, [draft.primaryPicUserId]: "Lead" as const } : assignments;
+    onSave({ ...draft, title: draft.title.trim(), category: draft.category.trim(), deadline, members: projectMembersFromAssignments(workspaceMembers, normalizedAssignments) });
     onOpenChange(false);
   };
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>Edit project</DialogTitle><DialogDescription>Perbarui informasi project. Perubahan langsung terlihat di board mock.</DialogDescription></DialogHeader><div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1 thin-scrollbar"><label className="block text-xs font-bold text-[#59656c]">Nama project<Input className="mt-2" value={draft.title} onChange={(e) => update("title", e.target.value)} autoFocus /></label><div className="grid gap-4 sm:grid-cols-2"><label className="text-xs font-bold text-[#59656c]">Status<select value={draft.status} onChange={(e) => update("status", e.target.value as Status)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal">{Object.keys(statusMeta).map((status) => <option key={status}>{status}</option>)}</select></label><label className="text-xs font-bold text-[#59656c]">PIC<select value={draft.pic} onChange={(e) => { const pic = e.target.value; update("pic", pic); update("initials", pic.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()); }} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal"><option>Angga Ramadhan</option><option>Nadia Putri</option><option>Arga Wibawa</option><option>Dita Anjani</option><option>Fikri Ramadhan</option><option>Maya Kirana</option></select></label><label className="text-xs font-bold text-[#59656c]">Deadline<Input type="date" value={(draft.deadlineIso || "2026-09-15").slice(0, 10)} onChange={(e) => update("deadlineIso", `${e.target.value}T17:00:00+07:00`)} className="mt-2 font-normal" /></label><label className="text-xs font-bold text-[#59656c]">Prioritas<select value={draft.priority} onChange={(e) => update("priority", e.target.value as Priority)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal"><option>High</option><option>Medium</option><option>Low</option></select></label></div><label className="block text-xs font-bold text-[#59656c]">Kategori<Input className="mt-2" value={draft.category} onChange={(e) => update("category", e.target.value)} /></label><label className="block text-xs font-bold text-[#59656c]">Working document<Input type="url" className="mt-2" value={draft.workingDocLink || ""} onChange={(e) => update("workingDocLink", e.target.value)} placeholder="https://docs.google.com/..." /></label><label className="block text-xs font-bold text-[#59656c]">Catatan<textarea value={draft.note} onChange={(e) => update("note", e.target.value)} className="mt-2 min-h-24 w-full resize-none rounded-md border border-[#d9d7cf] bg-white p-3 text-sm outline-none focus:border-[#e76f36]" /></label><div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button><Button onClick={save} disabled={!draft.title.trim() || !draft.category.trim()}><Check size={16} /> Simpan perubahan</Button></div></div></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>Edit project</DialogTitle><DialogDescription>Perbarui informasi, PIC, anggota, dan role kolaborasi project.</DialogDescription></DialogHeader><div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1 thin-scrollbar"><label className="block text-xs font-bold text-[#59656c]">Nama project<Input className="mt-2" value={draft.title} onChange={(e) => update("title", e.target.value)} autoFocus /></label><div className="grid gap-4 sm:grid-cols-2"><label className="text-xs font-bold text-[#59656c]">Status<select value={draft.status} onChange={(e) => update("status", e.target.value as Status)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal">{Object.keys(statusMeta).map((status) => <option key={status}>{status}</option>)}</select></label><label className="text-xs font-bold text-[#59656c]">Deadline<Input type="date" value={(draft.deadlineIso || "2026-09-15").slice(0, 10)} onChange={(e) => update("deadlineIso", `${e.target.value}T17:00:00+07:00`)} className="mt-2 font-normal" /></label><label className="text-xs font-bold text-[#59656c]">Prioritas<select value={draft.priority} onChange={(e) => update("priority", e.target.value as Priority)} className="mt-2 h-10 w-full rounded-md border border-[#d9d7cf] bg-white px-3 text-sm font-normal"><option>High</option><option>Medium</option><option>Low</option></select></label><label className="text-xs font-bold text-[#59656c]">Kategori<Input className="mt-2 font-normal" value={draft.category} onChange={(e) => update("category", e.target.value)} /></label></div><ProjectPeopleEditor workspaceMembers={workspaceMembers} primaryPicUserId={draft.primaryPicUserId ?? null} manualPic={draft.pic} assignments={assignments} onPrimaryChange={changePrimaryPic} onManualPicChange={(name) => { update("pic", name); update("initials", memberInitials(name)); }} onAssignmentsChange={setAssignments} /><label className="block text-xs font-bold text-[#59656c]">Working document<Input type="url" className="mt-2" value={draft.workingDocLink || ""} onChange={(e) => update("workingDocLink", e.target.value)} placeholder="https://docs.google.com/..." /></label><label className="block text-xs font-bold text-[#59656c]">Catatan<textarea value={draft.note} onChange={(e) => update("note", e.target.value)} className="mt-2 min-h-24 w-full resize-none rounded-md border border-[#d9d7cf] bg-white p-3 text-sm outline-none focus:border-[#e76f36]" /></label><div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button><Button onClick={save} disabled={!draft.title.trim() || !draft.category.trim() || !draft.pic.trim()}><Check size={16} /> Simpan perubahan</Button></div></div></DialogContent></Dialog>;
 }
 
 function DeleteProjectDialog({ project, open, onOpenChange, onConfirm }: { project: Project | null; open: boolean; onOpenChange: (v: boolean) => void; onConfirm: () => void }) {
@@ -844,16 +1029,82 @@ function DeleteProjectDialog({ project, open, onOpenChange, onConfirm }: { proje
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><div className="mb-3 grid h-11 w-11 place-items-center rounded-full bg-[#f9e8e5] text-[#b9433d]"><Trash2 size={20} /></div><DialogTitle>Hapus project ini?</DialogTitle><DialogDescription><b className="text-[#183044]">{project.title}</b> akan dihapus dari board. Tindakan ini tidak dapat dibatalkan.</DialogDescription></DialogHeader><div className="flex justify-end gap-2 pt-3"><Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button><Button className="bg-[#c84942] hover:bg-[#ae3d37]" onClick={onConfirm}><Trash2 size={16} /> Hapus project</Button></div></DialogContent></Dialog>;
 }
 
-function ProjectDetail({ project, open, onOpenChange, onEdit, onDelete }: { project: Project | null; open: boolean; onOpenChange: (v: boolean) => void; onEdit: () => void; onDelete: () => void }) {
+function ProjectDetail({ project, open, backendEnabled, fallbackPermissions, onOpenChange, onEdit, onDelete, onProjectUpdated }: { project: Project | null; open: boolean; backendEnabled: boolean; fallbackPermissions: ProjectPermissions; onOpenChange: (v: boolean) => void; onEdit: () => void; onDelete: () => void; onProjectUpdated: (project: Project) => void }) {
+  const [collaboration, setCollaboration] = useState<ProjectCollaboration | null>(null);
+  const [comment, setComment] = useState("");
+  const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
+  const [approvalNote, setApprovalNote] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [busy, setBusy] = useState(false);
+  const loadCollaboration = useCallback(async () => {
+    if (!project || !backendEnabled) return;
+    const response = await fetch(`/api/projects/${project.id}/collaboration`, { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = await response.json() as { data: ProjectCollaboration };
+    setCollaboration(payload.data);
+  }, [backendEnabled, project]);
+  useEffect(() => {
+    if (!open || !project) return;
+    setFeedback(""); setComment(""); setMentionUserIds([]); setApprovalNote("");
+    if (backendEnabled) void loadCollaboration();
+    else setCollaboration({ members: project.members ?? [], comments: [], approval: null, permissions: fallbackPermissions });
+  }, [backendEnabled, fallbackPermissions, loadCollaboration, open, project]);
   if (!project) return null;
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] overflow-y-auto thin-scrollbar"><DialogHeader><div className="mb-3 flex items-center gap-2"><Badge className={cn(statusMeta[project.status].soft, statusMeta[project.status].text)}>{project.status}</Badge><Badge className={priorityMeta[project.priority]}>{project.priority}</Badge></div><DialogTitle>{project.title}</DialogTitle><DialogDescription>{project.category}</DialogDescription></DialogHeader><div className="grid grid-cols-2 gap-4 border-y border-[#e5e2da] py-4"><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">PIC</div><div className="mt-2 flex items-center gap-2 text-sm font-semibold"><MiniAvatar initials={project.initials} />{project.pic}</div></div><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Deadline</div><div className="mt-3 flex items-center gap-2 text-sm font-semibold"><CalendarDays size={15} className="text-[#e76f36]" />{project.deadline} 2026</div></div></div><div className="space-y-4 py-4"><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Catatan project</div><p className="mt-2 text-sm leading-6 text-[#59656c]">{project.note}</p></div><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Working document</div><div className="mt-2 flex items-center gap-2 text-xs text-[#68747a]"><Link2 size={14} className="text-[#e76f36]" /><span className="truncate">{project.workingDocLink || "Belum ditambahkan"}</span></div></div></div><div className="mb-5 border-t border-[#e5e2da] pt-4"><div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[#92989b]"><History size={13} />Riwayat aktivitas</div><div className="space-y-3">{[{ text: `Status diperbarui menjadi ${project.status}`, time: "12 menit lalu" }, { text: `${project.pic} ditetapkan sebagai PIC`, time: "Kemarin, 14.20" }, { text: "Project dibuat di workspace", time: "3 hari lalu" }].map((activity, index) => <div key={activity.text} className="grid grid-cols-[12px_1fr] gap-2.5"><div className="relative flex justify-center"><span className={cn("mt-1.5 h-2 w-2 rounded-full", index === 0 ? "bg-[#e76f36]" : "bg-[#bbc1c3]")} />{index < 2 && <span className="absolute left-1/2 top-4 h-7 w-px -translate-x-1/2 bg-[#dedbd3]" />}</div><div><div className="text-xs font-medium text-[#44545d]">{activity.text}</div><div className="mt-0.5 text-[10px] text-[#949a9d]">{activity.time}</div></div></div>)}</div></div><div className="flex flex-col gap-2 sm:flex-row"><Button className="flex-1" disabled={!project.workingDocLink} onClick={() => project.workingDocLink && window.open(project.workingDocLink, "_blank", "noopener,noreferrer")}><FileText size={16} /> Buka working document</Button><Button variant="outline" onClick={onEdit}><MoreHorizontal size={16} /> Edit</Button><Button variant="outline" className="border-[#e2b9b5] text-[#b9433d] hover:bg-[#f9e8e5]" onClick={onDelete}><Trash2 size={16} /> Hapus</Button></div></DialogContent></Dialog>;
+  const detail = collaboration ?? { members: project.members ?? [], comments: [], approval: null, permissions: fallbackPermissions };
+  const submitComment = async () => {
+    if (!comment.trim() || !detail.permissions.canComment) return;
+    if (!backendEnabled) { setComment(""); setMentionUserIds([]); setFeedback("Komentar demo tersimpan sementara."); return; }
+    setBusy(true); setFeedback("");
+    try {
+      const response = await fetch(`/api/projects/${project.id}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: comment.trim(), mentionUserIds }) });
+      if (!response.ok) throw new Error();
+      const payload = await response.json() as { data: ProjectComment[] };
+      setCollaboration((current) => current ? { ...current, comments: payload.data } : current);
+      setComment(""); setMentionUserIds([]);
+    } catch { setFeedback("Komentar belum dapat dikirim."); } finally { setBusy(false); }
+  };
+  const requestApproval = async () => {
+    if (!backendEnabled) { setFeedback("Permintaan approval disimulasikan dalam mode demo."); return; }
+    setBusy(true); setFeedback("");
+    try {
+      const response = await fetch(`/api/projects/${project.id}/approval`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note: approvalNote }) });
+      const payload = await response.json() as { data?: ProjectApproval; error?: string };
+      if (!response.ok || !payload.data) throw new Error(payload.error || "Gagal meminta approval");
+      setCollaboration((current) => current ? { ...current, approval: payload.data! } : current);
+      setApprovalNote(""); setFeedback("Permintaan penyelesaian dikirim ke Lead/Admin.");
+    } catch (error) { setFeedback(error instanceof Error ? error.message : "Permintaan approval gagal."); } finally { setBusy(false); }
+  };
+  const reviewApproval = async (decision: "approved" | "rejected") => {
+    if (!detail.approval || !backendEnabled) return;
+    setBusy(true); setFeedback("");
+    try {
+      const response = await fetch(`/api/projects/${project.id}/approval/${detail.approval.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, note: approvalNote }) });
+      const payload = await response.json() as { data?: ProjectApproval; error?: string };
+      if (!response.ok || !payload.data) throw new Error(payload.error || "Review approval gagal");
+      setCollaboration((current) => current ? { ...current, approval: payload.data! } : current);
+      if (decision === "approved") {
+        const refreshed = await fetch(`/api/projects/${project.id}`);
+        if (refreshed.ok) { const projectPayload = await refreshed.json() as { data: ApiProject }; onProjectUpdated(fromApiProject(projectPayload.data)); }
+      }
+      setApprovalNote(""); setFeedback(decision === "approved" ? "Project disetujui dan dipindahkan ke Done." : "Permintaan penyelesaian ditolak.");
+    } catch (error) { setFeedback(error instanceof Error ? error.message : "Review approval gagal."); } finally { setBusy(false); }
+  };
+  const approvalPending = detail.approval?.status === "pending";
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] overflow-y-auto thin-scrollbar"><DialogHeader><div className="mb-3 flex flex-wrap items-center gap-2"><Badge className={cn(statusMeta[project.status].soft, statusMeta[project.status].text)}>{project.status}</Badge><Badge className={priorityMeta[project.priority]}>{project.priority}</Badge>{detail.permissions.role && <Badge className="bg-[#e8eef2] text-[#36566c]">Akses: {detail.permissions.role}</Badge>}</div><DialogTitle>{project.title}</DialogTitle><DialogDescription>{project.category}</DialogDescription></DialogHeader>
+    <div className="grid grid-cols-2 gap-4 border-y border-[#e5e2da] py-4"><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">PIC</div><div className="mt-2 flex items-center gap-2 text-sm font-semibold"><MiniAvatar initials={project.initials} />{project.pic}</div></div><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Deadline</div><div className="mt-3 flex items-center gap-2 text-sm font-semibold"><CalendarDays size={15} className="text-[#e76f36]" />{project.deadline}</div></div></div>
+    <div className="space-y-4 py-4"><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Catatan project</div><p className="mt-2 text-sm leading-6 text-[#59656c]">{project.note}</p></div><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Working document</div><div className="mt-2 flex items-center gap-2 text-xs text-[#68747a]"><Link2 size={14} className="text-[#e76f36]" /><span className="truncate">{project.workingDocLink || "Belum ditambahkan"}</span></div></div></div>
+    <section className="border-t border-[#e5e2da] pt-4"><div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[#92989b]"><Users size={13} />Anggota project</div><div className="grid gap-2 sm:grid-cols-2">{detail.members.map((member) => <div key={member.userId} className="flex items-center gap-2 border border-[#e5e2da] bg-[#faf9f5] p-2.5"><MiniAvatar initials={memberInitials(member.name)} image={member.image} name={member.name} /><div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold">{member.name}</div><div className="truncate text-[10px] text-[#8a9194]">{member.email}</div></div><Badge className="bg-white text-[#50616b]">{member.role}</Badge></div>)}{detail.members.length === 0 && <div className="text-xs text-[#8a9194]">Belum ada akun anggota di project ini.</div>}</div></section>
+    <section className="border-t border-[#e5e2da] pt-4"><div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[#92989b]"><MessageSquare size={13} />Komentar & mention</div><div className="max-h-44 space-y-2 overflow-y-auto thin-scrollbar">{detail.comments.map((item) => <div key={item.id} className="flex gap-2 bg-[#faf9f5] p-3"><MiniAvatar initials={memberInitials(item.authorName)} image={item.authorImage} name={item.authorName} /><div><div className="text-xs font-bold">{item.authorName}<span className="ml-2 font-normal text-[#9a9fa1]">{new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt))}</span></div><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-[#59656c]">{item.body}</p></div></div>)}{detail.comments.length === 0 && <div className="py-3 text-center text-xs text-[#92989b]">Belum ada komentar.</div>}</div>{detail.permissions.canComment && <div className="mt-3"><textarea value={comment} onChange={(event) => setComment(event.target.value)} className="min-h-20 w-full resize-none rounded-md border border-[#d9d7cf] bg-white p-3 text-sm outline-none focus:border-[#e76f36]" placeholder="Tulis komentar untuk tim…" /><div className="mt-2 flex flex-wrap gap-1">{detail.members.map((member) => { const active = mentionUserIds.includes(member.userId); return <button key={member.userId} type="button" onClick={() => { setMentionUserIds((current) => active ? current.filter((id) => id !== member.userId) : [...current, member.userId]); if (!active && !comment.includes(`@${member.name}`)) setComment((current) => `${current}${current ? " " : ""}@${member.name} `); }} className={cn("rounded-full border px-2 py-1 text-[10px]", active ? "border-[#e76f36] bg-[#fff1ea] text-[#bf5425]" : "border-[#dedbd3] text-[#68747a]")}>@{member.name.split(" ")[0]}</button>; })}<Button size="sm" className="ml-auto" onClick={() => void submitComment()} disabled={busy || !comment.trim()}><Send size={13} /> Kirim</Button></div></div>}</section>
+    {project.status !== "Done" && detail.permissions.canRequestCompletion && <section className="border-t border-[#e5e2da] pt-4"><div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Approval penyelesaian</div>{approvalPending ? <div className="bg-[#fff7e6] p-3 text-xs text-[#7b5a1b]"><b>Menunggu review</b> · diajukan oleh {detail.approval?.requestedByName}{detail.permissions.canApproveCompletion && <div className="mt-3 flex gap-2"><Input value={approvalNote} onChange={(event) => setApprovalNote(event.target.value)} placeholder="Catatan review (opsional)" /><Button size="sm" onClick={() => void reviewApproval("approved")} disabled={busy}><Check size={14} /> Setujui</Button><Button size="sm" variant="outline" onClick={() => void reviewApproval("rejected")} disabled={busy}><X size={14} /> Tolak</Button></div>}</div> : !detail.permissions.canApproveCompletion ? <div className="flex gap-2"><Input value={approvalNote} onChange={(event) => setApprovalNote(event.target.value)} placeholder="Catatan penyelesaian (opsional)" /><Button onClick={() => void requestApproval()} disabled={busy}>Minta approval Done</Button></div> : <p className="text-xs text-[#7b8387]">Sebagai {detail.permissions.role}, Anda dapat memindahkan project langsung ke Done.</p>}</section>}
+    {feedback && <div className="border-l-2 border-[#e76f36] bg-[#fff4ee] px-3 py-2 text-xs text-[#96502f]">{feedback}</div>}
+    <div className="flex flex-col gap-2 border-t border-[#e5e2da] pt-4 sm:flex-row"><Button className="flex-1" disabled={!project.workingDocLink} onClick={() => project.workingDocLink && window.open(project.workingDocLink, "_blank", "noopener,noreferrer")}><FileText size={16} /> Buka working document</Button>{detail.permissions.canEdit && <Button variant="outline" onClick={onEdit}><MoreHorizontal size={16} /> Edit</Button>}{detail.permissions.canDelete && <Button variant="outline" className="border-[#e2b9b5] text-[#b9433d] hover:bg-[#f9e8e5]" onClick={onDelete}><Trash2 size={16} /> Hapus</Button>}</div></DialogContent></Dialog>;
 }
 
-function ProjectCard({ project, onClick }: { project: Project; onClick: () => void }) {
+function ProjectCard({ project, canDrag, onClick }: { project: Project; canDrag: boolean; onClick: () => void }) {
   return (
-    <article draggable onDragStart={(e) => e.dataTransfer.setData("projectId", String(project.id))} onClick={onClick} className="group cursor-grab border border-[#e1ded5] bg-white p-3.5 shadow-[0_1px_1px_rgba(24,48,68,.04)] transition hover:-translate-y-0.5 hover:border-[#c9c5ba] hover:shadow-[0_5px_16px_rgba(24,48,68,.08)] active:cursor-grabbing">
+    <article draggable={canDrag} onDragStart={(e) => { if (canDrag) e.dataTransfer.setData("projectId", String(project.id)); }} onClick={onClick} className={cn("group border border-[#e1ded5] bg-white p-3.5 shadow-[0_1px_1px_rgba(24,48,68,.04)] transition hover:-translate-y-0.5 hover:border-[#c9c5ba] hover:shadow-[0_5px_16px_rgba(24,48,68,.08)]", canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer")}>
       <div className="flex items-start gap-2"><GripVertical size={14} className="mt-0.5 shrink-0 text-[#c0c2c1] opacity-0 transition group-hover:opacity-100" /><div className="min-w-0 flex-1"><div className="text-sm font-semibold leading-5 text-[#20394b]">{project.title}</div><div className="mt-1.5 text-[11px] text-[#8a9194]">{project.category}</div></div><button className="text-[#abb0b2]" onClick={(e) => e.stopPropagation()}><MoreHorizontal size={16} /></button></div>
-      <div className="mt-4 flex items-center justify-between border-t border-[#efede7] pt-3"><div className="flex items-center gap-2"><MiniAvatar initials={project.initials} /><span className="text-[11px] text-[#677278]">{project.pic.split(" ")[0]}</span></div><div className="flex items-center gap-2"><Badge className={priorityMeta[project.priority]}>{project.priority}</Badge>{project.status === "Delay" ? <span className="flex items-center gap-1 rounded-full bg-[#f9e8e5] px-2 py-1 text-[9px] font-bold text-[#b9433d]"><CircleAlert size={11} />Terlambat · {project.deadline}</span> : <span className="flex items-center gap-1 text-[10px] text-[#7f888d]"><Clock3 size={11} />{project.deadline}</span>}</div></div>
+      <div className="mt-4 flex items-center justify-between border-t border-[#efede7] pt-3"><div className="flex items-center">{(project.members ?? []).slice(0, 3).map((member, index) => <span key={member.userId} className={index ? "-ml-2" : ""} title={`${member.name} · ${member.role}`}><MiniAvatar initials={memberInitials(member.name)} image={member.image} name={member.name} className="ring-white" /></span>)}{(project.members?.length ?? 0) === 0 && <MiniAvatar initials={project.initials} />}{(project.members?.length ?? 0) > 3 && <span className="ml-1 text-[10px] text-[#7f888d]">+{project.members!.length - 3}</span>}</div><div className="flex items-center gap-2"><Badge className={priorityMeta[project.priority]}>{project.priority}</Badge>{project.status === "Delay" ? <span className="flex items-center gap-1 rounded-full bg-[#f9e8e5] px-2 py-1 text-[9px] font-bold text-[#b9433d]"><CircleAlert size={11} />Terlambat · {project.deadline}</span> : <span className="flex items-center gap-1 text-[10px] text-[#7f888d]"><Clock3 size={11} />{project.deadline}</span>}</div></div>
     </article>
   );
 }
@@ -872,7 +1123,7 @@ function MonthYearPicker({ month, year, mode, onChange }: { month: number; year:
   return <div className="inline-flex items-center gap-1 rounded-md border border-[#d9d7cf] bg-white p-1.5 shadow-[0_1px_1px_rgba(24,48,68,.03)]"><button type="button" aria-label="Periode sebelumnya" onClick={() => move(-1)} className="grid h-8 w-8 place-items-center rounded hover:bg-[#f3f1eb]"><ChevronLeft size={15} /></button><CalendarDays size={16} className="ml-1 text-[#e76f36]" />{mode === "month" && <><label className="sr-only" htmlFor="project-period-month">Bulan project</label><select id="project-period-month" aria-label={`Periode aktif ${monthNames[month]} ${year}`} value={month} onChange={(event) => onChange({ month: Number(event.target.value), year })} className="h-8 bg-transparent px-1 text-xs font-bold text-[#314754] outline-none">{monthNames.map((name, index) => <option key={name} value={index}>{name}</option>)}</select><span className="h-5 w-px bg-[#dedbd3]" /></>}<label className="sr-only" htmlFor="project-period-year">Tahun project</label><select id="project-period-year" aria-label={`Tahun aktif ${year}`} value={year} onChange={(event) => onChange({ month, year: Number(event.target.value) })} className="h-8 bg-transparent px-1 text-xs font-bold text-[#314754] outline-none">{years.map((option) => <option key={option}>{option}</option>)}</select><button type="button" aria-label="Periode berikutnya" onClick={() => move(1)} className="grid h-8 w-8 place-items-center rounded hover:bg-[#f3f1eb]"><ChevronRight size={15} /></button></div>;
 }
 
-function ProjectTracker({ projects, setProjects, backendEnabled }: { projects: Project[]; setProjects: React.Dispatch<React.SetStateAction<Project[]>>; backendEnabled: boolean }) {
+function ProjectTracker({ projects, setProjects, backendEnabled, profile, isAdmin }: { projects: Project[]; setProjects: React.Dispatch<React.SetStateAction<Project[]>>; backendEnabled: boolean; profile: ProfileData; isAdmin: boolean }) {
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState(() => { const today = new Date(); return { month: today.getMonth(), year: today.getFullYear() }; });
   const [periodMode, setPeriodMode] = useState<"month" | "year">("month");
@@ -885,6 +1136,20 @@ function ProjectTracker({ projects, setProjects, backendEnabled }: { projects: P
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [projectError, setProjectError] = useState("");
+  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberOption[]>([]);
+  useEffect(() => {
+    if (!backendEnabled) {
+      const names = Array.from(new Set([profile.name, ...projects.map((project) => project.pic)]));
+      setWorkspaceMembers(names.map((name, index) => ({ id: `demo-${index}`, name, email: index === 0 ? profile.email : `${name.toLowerCase().replace(/[^a-z0-9]+/g, ".")}@demo.local`, image: index === 0 ? profile.image : null, workspaceRole: index === 0 ? "Admin" : "Anggota" })));
+      return;
+    }
+    void fetch("/api/members", { cache: "no-store" }).then((response) => response.ok ? response.json() : Promise.reject()).then((payload: { data: WorkspaceMemberOption[] }) => setWorkspaceMembers(payload.data)).catch(() => setProjectError("Daftar anggota belum dapat dimuat."));
+  }, [backendEnabled, profile.email, profile.image, profile.name, projects]);
+  const permissionsFor = useCallback((project: Project): ProjectPermissions => {
+    if (!backendEnabled || isAdmin) return { role: "Admin", canEdit: true, canManageMembers: true, canComment: true, canRequestCompletion: true, canApproveCompletion: true, canDelete: true };
+    const role = project.members?.find((member) => member.email.toLowerCase() === profile.email.toLowerCase())?.role ?? null;
+    return { role, canEdit: role === "Lead", canManageMembers: role === "Lead", canComment: role === "Lead" || role === "Anggota", canRequestCompletion: role === "Lead" || role === "Anggota", canApproveCompletion: role === "Lead", canDelete: role === "Lead" };
+  }, [backendEnabled, isAdmin, profile.email]);
   const pics = Array.from(new Set(projects.map((project) => project.pic))).sort();
   const categories = Array.from(new Set(projects.map((project) => project.category))).sort();
   const priorityRank: Record<Priority, number> = { High: 0, Medium: 1, Low: 2 };
@@ -961,6 +1226,18 @@ function ProjectTracker({ projects, setProjects, backendEnabled }: { projects: P
     if (!id) return;
     const previous = projects.find((project) => project.id === id);
     if (!previous || previous.status === status) return;
+    const permissions = permissionsFor(previous);
+    if (!permissions.canEdit) {
+      if (status === "Done" && permissions.role === "Anggota") {
+        if (!backendEnabled) { setProjectError("Mode demo: permintaan approval Done disimulasikan."); return; }
+        void fetch(`/api/projects/${id}/approval`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note: "Diajukan melalui Kanban" }) })
+          .then(async (response) => { const payload = await response.json() as { error?: string }; if (!response.ok) throw new Error(payload.error || "Permintaan approval gagal"); setProjectError("Permintaan pindah ke Done sudah dikirim ke Lead/Admin."); })
+          .catch((error: unknown) => setProjectError(error instanceof Error ? error.message : "Permintaan approval gagal."));
+        return;
+      }
+      setProjectError("Role Anda tidak memiliki izin untuk mengubah status project ini.");
+      return;
+    }
     const changed = { ...previous, status, completedAtIso: status === "Done" ? previous.completedAtIso || new Date().toISOString() : undefined };
     setProjects((current) => current.map((project) => project.id === id ? changed : project));
     if (backendEnabled) void fetch(`/api/projects/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) })
@@ -974,11 +1251,11 @@ function ProjectTracker({ projects, setProjects, backendEnabled }: { projects: P
     {projectError && <div className="mb-4 border-l-2 border-[#d8564e] bg-[#f9e8e5] px-3 py-2 text-xs text-[#a43d37]">{projectError}</div>}
     <div className="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center"><div className="relative min-w-64 max-w-md flex-1"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8f9699]" /><Input value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" placeholder="Cari project, PIC, atau kategori..." /></div><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><label className="sr-only" htmlFor="status-filter">Filter status</label><select id="status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as Status | "all")} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua status</option>{Object.keys(statusMeta).map((status) => <option key={status} value={status}>{status}</option>)}</select><label className="sr-only" htmlFor="pic-filter">Filter PIC</label><select id="pic-filter" value={picFilter} onChange={(e) => setPicFilter(e.target.value)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua PIC</option>{pics.map((pic) => <option key={pic} value={pic}>{pic}</option>)}</select><label className="sr-only" htmlFor="category-filter">Filter kategori</label><select id="category-filter" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua kategori</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select><label className="sr-only" htmlFor="sort-projects">Urutkan project</label><select id="sort-projects" value={sortOrder} onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="deadline">Deadline terdekat</option><option value="priority">Prioritas tertinggi</option><option value="title">Nama A–Z</option></select></div><div className="xl:ml-auto text-xs text-[#7d8589]"><b className="text-[#183044]">{filtered.length}</b> project ditampilkan</div></div>
     <div className="thin-scrollbar -mx-5 overflow-x-auto px-5 pb-4 md:-mx-8 md:px-8"><div className="grid min-w-[1240px] grid-cols-5 gap-3">
-      {(Object.keys(statusMeta) as Status[]).map((status) => { const list = filtered.filter((p) => p.status === status); return <section key={status} onDragOver={(e) => e.preventDefault()} onDrop={(e) => drop(e, status)} className="min-h-[580px] bg-[#eeece6] p-2.5"><div className="mb-3 flex items-center px-1 py-1"><i className={cn("mr-2 h-2.5 w-2.5 rounded-full", statusMeta[status].dot)} /><h2 className="text-xs font-bold uppercase tracking-[0.1em]">{status}</h2><span className="ml-auto rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#7e878b]">{list.length}</span></div><div className="space-y-2.5">{list.map((p) => <ProjectCard key={p.id} project={p} onClick={() => setSelected(p)} />)}{list.length === 0 && <div className="grid h-24 place-items-center border border-dashed border-[#cbc7bd] text-xs text-[#9a9c9a]">Tarik project ke sini</div>}</div></section>; })}
+      {(Object.keys(statusMeta) as Status[]).map((status) => { const list = filtered.filter((p) => p.status === status); return <section key={status} onDragOver={(e) => e.preventDefault()} onDrop={(e) => drop(e, status)} className="min-h-[580px] bg-[#eeece6] p-2.5"><div className="mb-3 flex items-center px-1 py-1"><i className={cn("mr-2 h-2.5 w-2.5 rounded-full", statusMeta[status].dot)} /><h2 className="text-xs font-bold uppercase tracking-[0.1em]">{status}</h2><span className="ml-auto rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#7e878b]">{list.length}</span></div><div className="space-y-2.5">{list.map((p) => { const permissions = permissionsFor(p); return <ProjectCard key={p.id} project={p} canDrag={permissions.canEdit || permissions.role === "Anggota"} onClick={() => setSelected(p)} />; })}{list.length === 0 && <div className="grid h-24 place-items-center border border-dashed border-[#cbc7bd] text-xs text-[#9a9c9a]">Tarik project ke sini</div>}</div></section>; })}
     </div></div>
-    <AddProjectDialog open={adding} defaultDeadline={`${period.year}-${String(period.month + 1).padStart(2, "0")}-15`} onOpenChange={setAdding} onAdd={(project) => { void createProject(project); }} />
-    <ProjectDetail project={selected} open={!!selected && !editing && !deleting} onOpenChange={(v) => !v && setSelected(null)} onEdit={() => setEditing(true)} onDelete={() => setDeleting(true)} />
-    <EditProjectDialog project={selected} open={editing} onOpenChange={setEditing} onSave={(project) => { void saveProject(project); }} />
+    <AddProjectDialog open={adding} defaultDeadline={`${period.year}-${String(period.month + 1).padStart(2, "0")}-15`} workspaceMembers={workspaceMembers} currentUserEmail={profile.email} onOpenChange={setAdding} onAdd={(project) => { void createProject(project); }} />
+    <ProjectDetail project={selected} open={!!selected && !editing && !deleting} backendEnabled={backendEnabled} fallbackPermissions={selected ? permissionsFor(selected) : { role: null, canEdit: false, canManageMembers: false, canComment: false, canRequestCompletion: false, canApproveCompletion: false, canDelete: false }} onOpenChange={(v) => !v && setSelected(null)} onEdit={() => setEditing(true)} onDelete={() => setDeleting(true)} onProjectUpdated={(updated) => { setProjects((current) => current.map((item) => item.id === updated.id ? updated : item)); setSelected(updated); }} />
+    <EditProjectDialog project={selected} open={editing} workspaceMembers={workspaceMembers} onOpenChange={setEditing} onSave={(project) => { void saveProject(project); }} />
     <DeleteProjectDialog project={selected} open={deleting} onOpenChange={setDeleting} onConfirm={() => { if (selected) void deleteProject(selected); }} />
   </div>;
 }
@@ -1639,6 +1916,8 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
         if (browserSession.error) throw new Error(browserSession.error.message || "Akun berhasil dibuat, tetapi sesi belum dapat dimulai.");
       }
       window.localStorage.setItem(AUTH_ACTIVITY_STORAGE_KEY, String(Date.now()));
+      window.localStorage.removeItem(AUTH_TABS_STORAGE_KEY);
+      window.localStorage.removeItem(AUTH_LAST_TAB_CLOSED_KEY);
       window.location.reload();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Permintaan belum dapat diproses.");
@@ -1659,7 +1938,7 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
         <div className="absolute inset-0 grid-paper opacity-[.035]" />
         <div className="relative flex items-center gap-4"><BrandMark className="h-14 w-14" /><div><div className="font-serif text-2xl font-semibold">360 - Center of Research</div><div className="mt-1 text-[10px] uppercase tracking-[.2em] text-[#9eb0bc]">Project Workspace</div></div></div>
         <div className="relative my-auto max-w-xl"><div className="mb-5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.22em] text-[#e9a17d]"><span className="h-px w-8 bg-[#e9a17d]" />Track · Schedule · Complete · Archive</div><h1 className="font-serif text-5xl font-semibold leading-[1.08] tracking-[-.03em]">Satu ruang untuk setiap proses riset yang berarti.</h1><p className="mt-6 max-w-lg text-base leading-7 text-[#b6c3cb]">Jaga project, agenda, aset, dan keputusan tim tetap tersambung—dari brief pertama hingga laporan final.</p></div>
-        <div className="relative flex items-center gap-3 text-xs text-[#8499a7]"><ShieldCheck size={16} className="text-[#e9a17d]" />Sesi berakhir saat browser ditutup atau 10 menit tanpa aktivitas</div>
+        <div className="relative flex items-center gap-3 text-xs text-[#8499a7]"><ShieldCheck size={16} className="text-[#e9a17d]" />Sesi berakhir setelah tab 360 terakhir ditutup atau tidak dibuka selama 10 menit</div>
       </section>
       <section className="flex items-center justify-center px-5 py-12">
         <div className="w-full max-w-md">
@@ -1735,6 +2014,8 @@ export default function Home() {
     idleLogoutStarted.current = true;
     try {
       window.localStorage.removeItem(AUTH_ACTIVITY_STORAGE_KEY);
+      window.localStorage.removeItem(AUTH_TABS_STORAGE_KEY);
+      window.localStorage.removeItem(AUTH_LAST_TAB_CLOSED_KEY);
     } catch {
       // Continue signing out when storage is unavailable.
     }
@@ -1753,11 +2034,13 @@ export default function Home() {
   }, [session, demoMode]);
 
   if (isPending || !demoReady) return <div className="grid min-h-screen place-items-center bg-[#f5f3ed] text-[#e76f36]"><LoaderCircle className="animate-spin" size={28} /></div>;
-  if (!session && !demoMode) return <AuthScreen demoEnabled={process.env.NEXT_PUBLIC_ENABLE_DEMO !== "false"} onEnterDemo={() => { window.sessionStorage.setItem("ruang-riset-demo", "true"); window.localStorage.setItem(AUTH_ACTIVITY_STORAGE_KEY, String(Date.now())); setProjects(initialProjects); setDemoMode(true); }} />;
+  if (!session && !demoMode) return <AuthScreen demoEnabled={process.env.NEXT_PUBLIC_ENABLE_DEMO !== "false"} onEnterDemo={() => { window.sessionStorage.setItem("ruang-riset-demo", "true"); window.localStorage.setItem(AUTH_ACTIVITY_STORAGE_KEY, String(Date.now())); window.localStorage.removeItem(AUTH_LAST_TAB_CLOSED_KEY); setProjects(initialProjects); setDemoMode(true); }} />;
 
   const logout = () => {
     try {
       window.localStorage.removeItem(AUTH_ACTIVITY_STORAGE_KEY);
+      window.localStorage.removeItem(AUTH_TABS_STORAGE_KEY);
+      window.localStorage.removeItem(AUTH_LAST_TAB_CLOSED_KEY);
     } catch {
       // Continue signing out when storage is unavailable.
     }
@@ -1787,7 +2070,7 @@ export default function Home() {
 
   let page: React.ReactNode;
   if (active === "dashboard") page = <Dashboard projects={projects} goTo={setActive} backendEnabled={!!session} />;
-  else if (active === "tracker") page = <ProjectTracker projects={projects} setProjects={setProjects} backendEnabled={!!session} />;
+  else if (active === "tracker") page = <ProjectTracker projects={projects} setProjects={setProjects} backendEnabled={!!session} profile={profile} isAdmin={isAdmin} />;
   else if (active === "calendar") page = <CalendarPlanner projects={projects} backendEnabled={!!session} />;
   else if (active === "library") page = <AssetLibrary backendEnabled={!!session} />;
   else if (active === "activity") page = <ActivityHistory />;

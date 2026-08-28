@@ -2,14 +2,21 @@ import { z } from "zod";
 
 const status = z.enum(["On Going", "Delay", "Pending", "Revisi", "Done"]);
 const priority = z.enum(["High", "Medium", "Low"]);
+export const projectMemberRole = z.enum(["Lead", "Anggota", "Viewer"]);
 const dateValue = z.union([z.string(), z.date()]).transform((value) => new Date(value));
 const optionalUrl = z.union([z.url(), z.literal(""), z.null()]).optional();
+const projectAssignments = z.array(z.object({
+  userId: z.string().trim().min(1).max(255),
+  role: projectMemberRole,
+})).max(100).optional();
 
 export const createProjectSchema = z.object({
   title: z.string().trim().min(2).max(160),
   description: z.string().trim().max(4000).default(""),
   pic: z.string().trim().min(2).max(100),
   picInitials: z.string().trim().min(1).max(4).optional(),
+  primaryPicUserId: z.string().trim().min(1).max(255).nullable().optional(),
+  memberAssignments: projectAssignments,
   deadline: dateValue,
   status: status.default("Pending"),
   priority: priority.default("Medium"),
@@ -18,6 +25,20 @@ export const createProjectSchema = z.object({
 });
 
 export const updateProjectSchema = createProjectSchema.partial().refine((data) => Object.keys(data).length > 0, "No fields supplied");
+
+export const projectCommentSchema = z.object({
+  body: z.string().trim().min(1).max(4000),
+  mentionUserIds: z.array(z.string().trim().min(1).max(255)).max(50).default([]),
+});
+
+export const projectCompletionRequestSchema = z.object({
+  note: z.string().trim().max(1000).default(""),
+});
+
+export const projectCompletionReviewSchema = z.object({
+  decision: z.enum(["approved", "rejected"]),
+  note: z.string().trim().max(1000).default(""),
+});
 
 export const createAgendaSchema = z.object({
   title: z.string().trim().min(2).max(160),

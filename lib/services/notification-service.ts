@@ -35,6 +35,22 @@ async function createWorkspaceNotification(input: WorkspaceNotification) {
   })));
 }
 
+async function createTargetedNotifications(userIds: string[], input: Omit<WorkspaceNotification, "actorUserId"> & { actorUserId: string }) {
+  const recipients = Array.from(new Set(userIds)).filter((userId) => userId !== input.actorUserId);
+  if (recipients.length === 0) return;
+  const eventId = randomUUID();
+  await db.insert(notifications).values(recipients.map((userId) => ({
+    userId,
+    projectId: input.projectId ?? null,
+    agendaId: input.agendaId ?? null,
+    kind: input.kind,
+    title: input.title,
+    message: input.message,
+    targetView: input.targetView,
+    dedupeKey: `event:${eventId}`,
+  })));
+}
+
 export function notifyProjectCreated(project: ProjectRecord, actorUserId: string, actorName: string) {
   return createWorkspaceNotification({
     actorUserId,
@@ -52,6 +68,50 @@ export function notifyProjectUpdated(project: ProjectRecord, actorUserId: string
     kind: "activity",
     title: "Project diperbarui",
     message: `${actorName} memperbarui ${project.title}: ${detail}.`,
+    targetView: "tracker",
+    projectId: project.id,
+  });
+}
+
+export function notifyProjectAssignments(project: ProjectRecord, actorUserId: string, actorName: string, assignedUserIds: string[]) {
+  return createTargetedNotifications(assignedUserIds, {
+    actorUserId,
+    kind: "assignment",
+    title: "Anda ditugaskan ke project",
+    message: `${actorName} menambahkan Anda ke ${project.title}.`,
+    targetView: "tracker",
+    projectId: project.id,
+  });
+}
+
+export function notifyProjectMentions(project: ProjectRecord, actorUserId: string, actorName: string, mentionedUserIds: string[]) {
+  return createTargetedNotifications(mentionedUserIds, {
+    actorUserId,
+    kind: "mention",
+    title: "Anda disebut dalam komentar",
+    message: `${actorName} menyebut Anda di ${project.title}.`,
+    targetView: "tracker",
+    projectId: project.id,
+  });
+}
+
+export function notifyCompletionRequested(project: ProjectRecord, actorUserId: string, actorName: string, reviewerUserIds: string[]) {
+  return createTargetedNotifications(reviewerUserIds, {
+    actorUserId,
+    kind: "approval",
+    title: "Persetujuan penyelesaian diperlukan",
+    message: `${actorName} meminta persetujuan untuk menyelesaikan ${project.title}.`,
+    targetView: "tracker",
+    projectId: project.id,
+  });
+}
+
+export function notifyCompletionResolved(project: ProjectRecord, actorUserId: string, actorName: string, requesterUserId: string, decision: "approved" | "rejected") {
+  return createTargetedNotifications([requesterUserId], {
+    actorUserId,
+    kind: "approval",
+    title: decision === "approved" ? "Penyelesaian project disetujui" : "Penyelesaian project perlu diperbaiki",
+    message: `${actorName} ${decision === "approved" ? "menyetujui" : "menolak"} penyelesaian ${project.title}.`,
     targetView: "tracker",
     projectId: project.id,
   });
