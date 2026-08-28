@@ -12,6 +12,7 @@ export type ProjectFilters = {
   category?: string;
   periodStart?: Date;
   periodEnd?: Date;
+  archived?: boolean;
 };
 
 export type ProjectChanges = Partial<Omit<NewProjectRecord, "id" | "createdAt">>;

@@ -270,6 +270,7 @@ type Project = {
   workingDocLink?: string;
   primaryPicUserId?: string | null;
   members?: ProjectMember[];
+  archivedAt?: string | null;
 };
 
 type WorkspaceMemberOption = {
@@ -595,11 +596,26 @@ function fromApiNotification(notification: ApiNotification): NotificationAlert {
   };
 }
 
+type GlobalSearchResult = {
+  id: number;
+  type: "project" | "comment" | "agenda" | "asset";
+  view: View;
+  title: string;
+  description: string;
+  category?: string;
+  author?: string;
+  archivedAt?: string | null;
+};
+
 function Header({ active, onMenu, profile, onProfile, onNavigate, backendEnabled }: { active: View; onMenu: () => void; profile: ProfileData; onProfile: () => void; onNavigate: (view: View) => void; backendEnabled: boolean }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [alerts, setAlerts] = useState<NotificationAlert[]>(notificationAlerts);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationError, setNotificationError] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [globalQuery, setGlobalQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<GlobalSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
   const title = active === "profile" ? "Profil" : navItems.find((n) => n.id === active)?.label ?? "Dashboard";
   const unreadCount = alerts.filter((alert) => !alert.read).length;
@@ -649,6 +665,20 @@ function Header({ active, onMenu, profile, onProfile, onNavigate, backendEnabled
     return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
   }, [notificationsOpen]);
 
+  useEffect(() => {
+    if (!searchOpen || globalQuery.trim().length < 2 || !backendEnabled) { setSearchResults([]); setSearching(false); return; }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setSearching(true);
+      void fetch(`/api/search?q=${encodeURIComponent(globalQuery.trim())}`, { signal: controller.signal })
+        .then((response) => response.ok ? response.json() : Promise.reject())
+        .then((payload: { data: GlobalSearchResult[] }) => setSearchResults(payload.data))
+        .catch((error: Error) => { if (error.name !== "AbortError") setSearchResults([]); })
+        .finally(() => { if (!controller.signal.aborted) setSearching(false); });
+    }, 250);
+    return () => { controller.abort(); window.clearTimeout(timer); };
+  }, [backendEnabled, globalQuery, searchOpen]);
+
   const openAlert = async (alert: NotificationAlert) => {
     if (!alert.read) {
       setAlerts((current) => current.map((item) => item.id === alert.id ? { ...item, read: true } : item));
@@ -688,6 +718,10 @@ function Header({ active, onMenu, profile, onProfile, onNavigate, backendEnabled
         <div className="font-serif text-lg font-semibold text-[#183044]">{title}</div>
       </div>
       <div className="ml-auto flex items-center gap-2">
+        <div className="relative">
+          <button onClick={() => setSearchOpen((current) => !current)} className={cn("grid h-9 w-9 place-items-center rounded-full text-[#53626b] hover:bg-white", searchOpen && "bg-white text-[#183044]")} aria-label="Pencarian global"><Search size={18} /></button>
+          {searchOpen && <div className="absolute right-0 top-12 z-50 w-[min(440px,calc(100vw-2rem))] border border-[#ddd9d0] bg-white p-3 shadow-[0_18px_50px_rgba(24,48,68,.18)]"><div className="relative"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8f9699]" /><Input autoFocus value={globalQuery} onChange={(event) => setGlobalQuery(event.target.value)} className="pl-9 pr-9" placeholder="Cari project, komentar, agenda, atau aset…" /><button onClick={() => { setSearchOpen(false); setGlobalQuery(""); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8f9699]"><X size={15} /></button></div><div className="mt-2 max-h-80 divide-y divide-[#eeeae2] overflow-y-auto thin-scrollbar">{searching && <div className="grid place-items-center py-8 text-[#e76f36]"><LoaderCircle className="animate-spin" size={20} /></div>}{!searching && globalQuery.trim().length < 2 && <p className="px-3 py-8 text-center text-xs text-[#8a9194]">Ketik minimal 2 karakter.</p>}{!searching && globalQuery.trim().length >= 2 && searchResults.length === 0 && <p className="px-3 py-8 text-center text-xs text-[#8a9194]">Tidak ada hasil yang cocok.</p>}{searchResults.map((result) => <button key={`${result.type}-${result.id}`} onClick={() => { setSearchOpen(false); setGlobalQuery(""); onNavigate(result.view); }} className="flex w-full items-start gap-3 px-3 py-3 text-left hover:bg-[#f8f6f1]"><span className="mt-0.5 rounded bg-[#eef1f3] px-2 py-1 text-[9px] font-bold uppercase text-[#536873]">{result.type}</span><span className="min-w-0 flex-1"><span className="flex items-center gap-2 text-sm font-semibold text-[#183044]">{result.title}{result.archivedAt && <Badge className="bg-[#eeeae2] text-[#6e7477]">Arsip</Badge>}</span><span className="mt-1 block truncate text-xs text-[#7b8387]">{result.description || result.category || result.author || "Buka hasil"}</span></span><ChevronRight size={15} className="mt-1 text-[#a0a6a8]" /></button>)}</div></div>}
+        </div>
         <div className="relative" ref={notificationRef}>
           <button onClick={() => setNotificationsOpen((open) => !open)} className={cn("relative grid h-9 w-9 place-items-center rounded-full text-[#53626b] hover:bg-white", notificationsOpen && "bg-white text-[#183044]")} aria-label={`Notifikasi${unreadCount ? `, ${unreadCount} belum dibaca` : ""}`} aria-expanded={notificationsOpen} aria-haspopup="dialog">
             <Bell size={19} />
@@ -1029,7 +1063,7 @@ function DeleteProjectDialog({ project, open, onOpenChange, onConfirm }: { proje
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><div className="mb-3 grid h-11 w-11 place-items-center rounded-full bg-[#f9e8e5] text-[#b9433d]"><Trash2 size={20} /></div><DialogTitle>Hapus project ini?</DialogTitle><DialogDescription><b className="text-[#183044]">{project.title}</b> akan dihapus dari board. Tindakan ini tidak dapat dibatalkan.</DialogDescription></DialogHeader><div className="flex justify-end gap-2 pt-3"><Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button><Button className="bg-[#c84942] hover:bg-[#ae3d37]" onClick={onConfirm}><Trash2 size={16} /> Hapus project</Button></div></DialogContent></Dialog>;
 }
 
-function ProjectDetail({ project, open, backendEnabled, fallbackPermissions, onOpenChange, onEdit, onDelete, onProjectUpdated }: { project: Project | null; open: boolean; backendEnabled: boolean; fallbackPermissions: ProjectPermissions; onOpenChange: (v: boolean) => void; onEdit: () => void; onDelete: () => void; onProjectUpdated: (project: Project) => void }) {
+function ProjectDetail({ project, open, backendEnabled, fallbackPermissions, onOpenChange, onEdit, onDelete, onArchive, onProjectUpdated }: { project: Project | null; open: boolean; backendEnabled: boolean; fallbackPermissions: ProjectPermissions; onOpenChange: (v: boolean) => void; onEdit: () => void; onDelete: () => void; onArchive: () => void; onProjectUpdated: (project: Project) => void }) {
   const [collaboration, setCollaboration] = useState<ProjectCollaboration | null>(null);
   const [comment, setComment] = useState("");
   const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
@@ -1094,10 +1128,10 @@ function ProjectDetail({ project, open, backendEnabled, fallbackPermissions, onO
     <div className="grid grid-cols-2 gap-4 border-y border-[#e5e2da] py-4"><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">PIC</div><div className="mt-2 flex items-center gap-2 text-sm font-semibold"><MiniAvatar initials={project.initials} />{project.pic}</div></div><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Deadline</div><div className="mt-3 flex items-center gap-2 text-sm font-semibold"><CalendarDays size={15} className="text-[#e76f36]" />{project.deadline}</div></div></div>
     <div className="space-y-4 py-4"><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Catatan project</div><p className="mt-2 text-sm leading-6 text-[#59656c]">{project.note}</p></div><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Working document</div><div className="mt-2 flex items-center gap-2 text-xs text-[#68747a]"><Link2 size={14} className="text-[#e76f36]" /><span className="truncate">{project.workingDocLink || "Belum ditambahkan"}</span></div></div></div>
     <section className="border-t border-[#e5e2da] pt-4"><div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[#92989b]"><Users size={13} />Anggota project</div><div className="grid gap-2 sm:grid-cols-2">{detail.members.map((member) => <div key={member.userId} className="flex items-center gap-2 border border-[#e5e2da] bg-[#faf9f5] p-2.5"><MiniAvatar initials={memberInitials(member.name)} image={member.image} name={member.name} /><div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold">{member.name}</div><div className="truncate text-[10px] text-[#8a9194]">{member.email}</div></div><Badge className="bg-white text-[#50616b]">{member.role}</Badge></div>)}{detail.members.length === 0 && <div className="text-xs text-[#8a9194]">Belum ada akun anggota di project ini.</div>}</div></section>
-    <section className="border-t border-[#e5e2da] pt-4"><div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[#92989b]"><MessageSquare size={13} />Komentar & mention</div><div className="max-h-44 space-y-2 overflow-y-auto thin-scrollbar">{detail.comments.map((item) => <div key={item.id} className="flex gap-2 bg-[#faf9f5] p-3"><MiniAvatar initials={memberInitials(item.authorName)} image={item.authorImage} name={item.authorName} /><div><div className="text-xs font-bold">{item.authorName}<span className="ml-2 font-normal text-[#9a9fa1]">{new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt))}</span></div><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-[#59656c]">{item.body}</p></div></div>)}{detail.comments.length === 0 && <div className="py-3 text-center text-xs text-[#92989b]">Belum ada komentar.</div>}</div>{detail.permissions.canComment && <div className="mt-3"><textarea value={comment} onChange={(event) => setComment(event.target.value)} className="min-h-20 w-full resize-none rounded-md border border-[#d9d7cf] bg-white p-3 text-sm outline-none focus:border-[#e76f36]" placeholder="Tulis komentar untuk tim…" /><div className="mt-2 flex flex-wrap gap-1">{detail.members.map((member) => { const active = mentionUserIds.includes(member.userId); return <button key={member.userId} type="button" onClick={() => { setMentionUserIds((current) => active ? current.filter((id) => id !== member.userId) : [...current, member.userId]); if (!active && !comment.includes(`@${member.name}`)) setComment((current) => `${current}${current ? " " : ""}@${member.name} `); }} className={cn("rounded-full border px-2 py-1 text-[10px]", active ? "border-[#e76f36] bg-[#fff1ea] text-[#bf5425]" : "border-[#dedbd3] text-[#68747a]")}>@{member.name.split(" ")[0]}</button>; })}<Button size="sm" className="ml-auto" onClick={() => void submitComment()} disabled={busy || !comment.trim()}><Send size={13} /> Kirim</Button></div></div>}</section>
-    {project.status !== "Done" && detail.permissions.canRequestCompletion && <section className="border-t border-[#e5e2da] pt-4"><div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Approval penyelesaian</div>{approvalPending ? <div className="bg-[#fff7e6] p-3 text-xs text-[#7b5a1b]"><b>Menunggu review</b> · diajukan oleh {detail.approval?.requestedByName}{detail.permissions.canApproveCompletion && <div className="mt-3 flex gap-2"><Input value={approvalNote} onChange={(event) => setApprovalNote(event.target.value)} placeholder="Catatan review (opsional)" /><Button size="sm" onClick={() => void reviewApproval("approved")} disabled={busy}><Check size={14} /> Setujui</Button><Button size="sm" variant="outline" onClick={() => void reviewApproval("rejected")} disabled={busy}><X size={14} /> Tolak</Button></div>}</div> : !detail.permissions.canApproveCompletion ? <div className="flex gap-2"><Input value={approvalNote} onChange={(event) => setApprovalNote(event.target.value)} placeholder="Catatan penyelesaian (opsional)" /><Button onClick={() => void requestApproval()} disabled={busy}>Minta approval Done</Button></div> : <p className="text-xs text-[#7b8387]">Sebagai {detail.permissions.role}, Anda dapat memindahkan project langsung ke Done.</p>}</section>}
+    <section className="border-t border-[#e5e2da] pt-4"><div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[#92989b]"><MessageSquare size={13} />Komentar & mention</div><div className="max-h-44 space-y-2 overflow-y-auto thin-scrollbar">{detail.comments.map((item) => <div key={item.id} className="flex gap-2 bg-[#faf9f5] p-3"><MiniAvatar initials={memberInitials(item.authorName)} image={item.authorImage} name={item.authorName} /><div><div className="text-xs font-bold">{item.authorName}<span className="ml-2 font-normal text-[#9a9fa1]">{new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt))}</span></div><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-[#59656c]">{item.body}</p></div></div>)}{detail.comments.length === 0 && <div className="py-3 text-center text-xs text-[#92989b]">Belum ada komentar.</div>}</div>{detail.permissions.canComment && !project.archivedAt && <div className="mt-3"><textarea value={comment} onChange={(event) => setComment(event.target.value)} className="min-h-20 w-full resize-none rounded-md border border-[#d9d7cf] bg-white p-3 text-sm outline-none focus:border-[#e76f36]" placeholder="Tulis komentar untuk tim…" /><div className="mt-2 flex flex-wrap gap-1">{detail.members.map((member) => { const active = mentionUserIds.includes(member.userId); return <button key={member.userId} type="button" onClick={() => { setMentionUserIds((current) => active ? current.filter((id) => id !== member.userId) : [...current, member.userId]); if (!active && !comment.includes(`@${member.name}`)) setComment((current) => `${current}${current ? " " : ""}@${member.name} `); }} className={cn("rounded-full border px-2 py-1 text-[10px]", active ? "border-[#e76f36] bg-[#fff1ea] text-[#bf5425]" : "border-[#dedbd3] text-[#68747a]")}>@{member.name.split(" ")[0]}</button>; })}<Button size="sm" className="ml-auto" onClick={() => void submitComment()} disabled={busy || !comment.trim()}><Send size={13} /> Kirim</Button></div></div>}</section>
+    {!project.archivedAt && project.status !== "Done" && detail.permissions.canRequestCompletion && <section className="border-t border-[#e5e2da] pt-4"><div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Approval penyelesaian</div>{approvalPending ? <div className="bg-[#fff7e6] p-3 text-xs text-[#7b5a1b]"><b>Menunggu review</b> · diajukan oleh {detail.approval?.requestedByName}{detail.permissions.canApproveCompletion && <div className="mt-3 flex gap-2"><Input value={approvalNote} onChange={(event) => setApprovalNote(event.target.value)} placeholder="Catatan review (opsional)" /><Button size="sm" onClick={() => void reviewApproval("approved")} disabled={busy}><Check size={14} /> Setujui</Button><Button size="sm" variant="outline" onClick={() => void reviewApproval("rejected")} disabled={busy}><X size={14} /> Tolak</Button></div>}</div> : !detail.permissions.canApproveCompletion ? <div className="flex gap-2"><Input value={approvalNote} onChange={(event) => setApprovalNote(event.target.value)} placeholder="Catatan penyelesaian (opsional)" /><Button onClick={() => void requestApproval()} disabled={busy}>Minta approval Done</Button></div> : <p className="text-xs text-[#7b8387]">Sebagai {detail.permissions.role}, Anda dapat memindahkan project langsung ke Done.</p>}</section>}
     {feedback && <div className="border-l-2 border-[#e76f36] bg-[#fff4ee] px-3 py-2 text-xs text-[#96502f]">{feedback}</div>}
-    <div className="flex flex-col gap-2 border-t border-[#e5e2da] pt-4 sm:flex-row"><Button className="flex-1" disabled={!project.workingDocLink} onClick={() => project.workingDocLink && window.open(project.workingDocLink, "_blank", "noopener,noreferrer")}><FileText size={16} /> Buka working document</Button>{detail.permissions.canEdit && <Button variant="outline" onClick={onEdit}><MoreHorizontal size={16} /> Edit</Button>}{detail.permissions.canDelete && <Button variant="outline" className="border-[#e2b9b5] text-[#b9433d] hover:bg-[#f9e8e5]" onClick={onDelete}><Trash2 size={16} /> Hapus</Button>}</div></DialogContent></Dialog>;
+    <div className="flex flex-col gap-2 border-t border-[#e5e2da] pt-4 sm:flex-row"><Button className="flex-1" disabled={!project.workingDocLink} onClick={() => project.workingDocLink && window.open(project.workingDocLink, "_blank", "noopener,noreferrer")}><FileText size={16} /> Buka working document</Button>{detail.permissions.canEdit && !project.archivedAt && <Button variant="outline" onClick={onEdit}><MoreHorizontal size={16} /> Edit</Button>}{detail.permissions.canEdit && <Button variant="outline" onClick={onArchive}><Archive size={16} />{project.archivedAt ? "Pulihkan" : "Arsipkan"}</Button>}{detail.permissions.canDelete && <Button variant="outline" className="border-[#e2b9b5] text-[#b9433d] hover:bg-[#f9e8e5]" onClick={onDelete}><Trash2 size={16} /> Hapus</Button>}</div></DialogContent></Dialog>;
 }
 
 function ProjectCard({ project, canDrag, onClick }: { project: Project; canDrag: boolean; onClick: () => void }) {
@@ -1137,6 +1171,9 @@ function ProjectTracker({ projects, setProjects, backendEnabled, profile, isAdmi
   const [deleting, setDeleting] = useState(false);
   const [projectError, setProjectError] = useState("");
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberOption[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedProjects, setArchivedProjects] = useState<Project[]>([]);
+  const boardProjects = showArchived ? archivedProjects : projects;
   useEffect(() => {
     if (!backendEnabled) {
       const names = Array.from(new Set([profile.name, ...projects.map((project) => project.pic)]));
@@ -1145,15 +1182,22 @@ function ProjectTracker({ projects, setProjects, backendEnabled, profile, isAdmi
     }
     void fetch("/api/members", { cache: "no-store" }).then((response) => response.ok ? response.json() : Promise.reject()).then((payload: { data: WorkspaceMemberOption[] }) => setWorkspaceMembers(payload.data)).catch(() => setProjectError("Daftar anggota belum dapat dimuat."));
   }, [backendEnabled, profile.email, profile.image, profile.name, projects]);
+  useEffect(() => {
+    if (!showArchived || !backendEnabled) return;
+    void fetch("/api/projects?archived=true", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((payload: { data: ApiProject[] }) => setArchivedProjects(payload.data.map(fromApiProject)))
+      .catch(() => setProjectError("Arsip project belum dapat dimuat."));
+  }, [backendEnabled, showArchived]);
   const permissionsFor = useCallback((project: Project): ProjectPermissions => {
     if (!backendEnabled || isAdmin) return { role: "Admin", canEdit: true, canManageMembers: true, canComment: true, canRequestCompletion: true, canApproveCompletion: true, canDelete: true };
     const role = project.members?.find((member) => member.email.toLowerCase() === profile.email.toLowerCase())?.role ?? null;
     return { role, canEdit: role === "Lead", canManageMembers: role === "Lead", canComment: role === "Lead" || role === "Anggota", canRequestCompletion: role === "Lead" || role === "Anggota", canApproveCompletion: role === "Lead", canDelete: role === "Lead" };
   }, [backendEnabled, isAdmin, profile.email]);
-  const pics = Array.from(new Set(projects.map((project) => project.pic))).sort();
-  const categories = Array.from(new Set(projects.map((project) => project.category))).sort();
+  const pics = Array.from(new Set(boardProjects.map((project) => project.pic))).sort();
+  const categories = Array.from(new Set(boardProjects.map((project) => project.category))).sort();
   const priorityRank: Record<Priority, number> = { High: 0, Medium: 1, Low: 2 };
-  const filtered = projects.filter((project) => {
+  const filtered = boardProjects.filter((project) => {
     const periodIso = project.status === "Done" ? project.completedAtIso || project.deadlineIso : project.deadlineIso;
     const periodDate = periodIso ? new Date(periodIso) : null;
     const matchesPeriod = !!periodDate && periodDate.getFullYear() === period.year && (periodMode === "year" || periodDate.getMonth() === period.month);
@@ -1220,6 +1264,22 @@ function ProjectTracker({ projects, setProjects, backendEnabled, profile, isAdmi
     setDeleting(false);
     setSelected(null);
   };
+  const toggleArchive = async (project: Project) => {
+    const restoring = Boolean(project.archivedAt);
+    if (!window.confirm(restoring ? `Pulihkan ${project.title} ke board aktif?` : `Arsipkan ${project.title}? Project tetap dapat dipulihkan.`)) return;
+    if (!backendEnabled) {
+      if (restoring) { setArchivedProjects((current) => current.filter((item) => item.id !== project.id)); setProjects((current) => [{ ...project, archivedAt: null }, ...current]); }
+      else { setProjects((current) => current.filter((item) => item.id !== project.id)); setArchivedProjects((current) => [{ ...project, archivedAt: new Date().toISOString() }, ...current]); }
+      setSelected(null); return;
+    }
+    const response = await fetch(`/api/projects/${project.id}/archive`, { method: restoring ? "DELETE" : "POST" });
+    if (!response.ok) { setProjectError("Status arsip belum dapat diperbarui."); return; }
+    const payload = await response.json() as { data: ApiProject };
+    const updated = fromApiProject({ ...payload.data, members: project.members });
+    if (restoring) { setArchivedProjects((current) => current.filter((item) => item.id !== project.id)); setProjects((current) => [updated, ...current]); }
+    else { setProjects((current) => current.filter((item) => item.id !== project.id)); setArchivedProjects((current) => [updated, ...current]); }
+    setSelected(null);
+  };
   const drop = (event: React.DragEvent, status: Status) => {
     event.preventDefault();
     const id = Number(event.dataTransfer.getData("projectId"));
@@ -1246,15 +1306,15 @@ function ProjectTracker({ projects, setProjects, backendEnabled, profile, isAdmi
       .catch(() => setProjects((current) => current.map((project) => project.id === id ? previous : project)));
   };
   return <div className="fade-up">
-    <SectionHeading eyebrow="Track" title="Project Tracker" description="Pantau seluruh alur kerja tim. Tarik kartu untuk memperbarui status project secara langsung." action={<Button onClick={() => setAdding(true)}><Plus size={17} /> Tambah project</Button>} />
+    <SectionHeading eyebrow="Track" title={showArchived ? "Arsip Project" : "Project Tracker"} description={showArchived ? "Project yang selesai disimpan tanpa menghapus riwayat, komentar, maupun asetnya." : "Pantau seluruh alur kerja tim. Tarik kartu untuk memperbarui status project secara langsung."} action={<div className="flex gap-2"><Button variant="outline" onClick={() => { setShowArchived((current) => !current); setSelected(null); }}><Archive size={17} />{showArchived ? "Kembali ke board" : "Buka arsip"}</Button>{!showArchived && <Button onClick={() => setAdding(true)}><Plus size={17} /> Tambah project</Button>}</div>} />
     <div className="mb-3 flex flex-wrap items-center gap-2"><div className="inline-flex rounded-md border border-[#d9d7cf] bg-white p-1"><button type="button" onClick={() => setPeriodMode("month")} className={cn("rounded px-3 py-1.5 text-xs font-bold", periodMode === "month" ? "bg-[#193246] text-white" : "text-[#667278] hover:bg-[#f3f1eb]")}>Bulanan</button><button type="button" onClick={() => setPeriodMode("year")} className={cn("rounded px-3 py-1.5 text-xs font-bold", periodMode === "year" ? "bg-[#193246] text-white" : "text-[#667278] hover:bg-[#f3f1eb]")}>Tahunan</button></div><MonthYearPicker month={period.month} year={period.year} mode={periodMode} onChange={setPeriod} /><Button type="button" size="sm" variant="outline" onClick={() => { const today = new Date(); setPeriod({ month: today.getMonth(), year: today.getFullYear() }); setPeriodMode("month"); }}>Hari ini</Button><span className="ml-auto text-[11px] text-[#8a9194]">{periodMode === "month" ? `Board ${monthNames[period.month]} ${period.year}` : `Board tahun ${period.year}`}</span></div>
     {projectError && <div className="mb-4 border-l-2 border-[#d8564e] bg-[#f9e8e5] px-3 py-2 text-xs text-[#a43d37]">{projectError}</div>}
     <div className="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center"><div className="relative min-w-64 max-w-md flex-1"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8f9699]" /><Input value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" placeholder="Cari project, PIC, atau kategori..." /></div><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><label className="sr-only" htmlFor="status-filter">Filter status</label><select id="status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as Status | "all")} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua status</option>{Object.keys(statusMeta).map((status) => <option key={status} value={status}>{status}</option>)}</select><label className="sr-only" htmlFor="pic-filter">Filter PIC</label><select id="pic-filter" value={picFilter} onChange={(e) => setPicFilter(e.target.value)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua PIC</option>{pics.map((pic) => <option key={pic} value={pic}>{pic}</option>)}</select><label className="sr-only" htmlFor="category-filter">Filter kategori</label><select id="category-filter" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="all">Semua kategori</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select><label className="sr-only" htmlFor="sort-projects">Urutkan project</label><select id="sort-projects" value={sortOrder} onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)} className="h-10 rounded-md border border-[#d9d7cf] bg-white px-3 text-xs font-semibold text-[#59656c]"><option value="deadline">Deadline terdekat</option><option value="priority">Prioritas tertinggi</option><option value="title">Nama A–Z</option></select></div><div className="xl:ml-auto text-xs text-[#7d8589]"><b className="text-[#183044]">{filtered.length}</b> project ditampilkan</div></div>
     <div className="thin-scrollbar -mx-5 overflow-x-auto px-5 pb-4 md:-mx-8 md:px-8"><div className="grid min-w-[1240px] grid-cols-5 gap-3">
-      {(Object.keys(statusMeta) as Status[]).map((status) => { const list = filtered.filter((p) => p.status === status); return <section key={status} onDragOver={(e) => e.preventDefault()} onDrop={(e) => drop(e, status)} className="min-h-[580px] bg-[#eeece6] p-2.5"><div className="mb-3 flex items-center px-1 py-1"><i className={cn("mr-2 h-2.5 w-2.5 rounded-full", statusMeta[status].dot)} /><h2 className="text-xs font-bold uppercase tracking-[0.1em]">{status}</h2><span className="ml-auto rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#7e878b]">{list.length}</span></div><div className="space-y-2.5">{list.map((p) => { const permissions = permissionsFor(p); return <ProjectCard key={p.id} project={p} canDrag={permissions.canEdit || permissions.role === "Anggota"} onClick={() => setSelected(p)} />; })}{list.length === 0 && <div className="grid h-24 place-items-center border border-dashed border-[#cbc7bd] text-xs text-[#9a9c9a]">Tarik project ke sini</div>}</div></section>; })}
+      {(Object.keys(statusMeta) as Status[]).map((status) => { const list = filtered.filter((p) => p.status === status); return <section key={status} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { if (!showArchived) drop(e, status); }} className="min-h-[580px] bg-[#eeece6] p-2.5"><div className="mb-3 flex items-center px-1 py-1"><i className={cn("mr-2 h-2.5 w-2.5 rounded-full", statusMeta[status].dot)} /><h2 className="text-xs font-bold uppercase tracking-[0.1em]">{status}</h2><span className="ml-auto rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#7e878b]">{list.length}</span></div><div className="space-y-2.5">{list.map((p) => { const permissions = permissionsFor(p); return <ProjectCard key={p.id} project={p} canDrag={!showArchived && (permissions.canEdit || permissions.role === "Anggota")} onClick={() => setSelected(p)} />; })}{list.length === 0 && <div className="grid h-24 place-items-center border border-dashed border-[#cbc7bd] text-xs text-[#9a9c9a]">{showArchived ? "Tidak ada project arsip" : "Tarik project ke sini"}</div>}</div></section>; })}
     </div></div>
     <AddProjectDialog open={adding} defaultDeadline={`${period.year}-${String(period.month + 1).padStart(2, "0")}-15`} workspaceMembers={workspaceMembers} currentUserEmail={profile.email} onOpenChange={setAdding} onAdd={(project) => { void createProject(project); }} />
-    <ProjectDetail project={selected} open={!!selected && !editing && !deleting} backendEnabled={backendEnabled} fallbackPermissions={selected ? permissionsFor(selected) : { role: null, canEdit: false, canManageMembers: false, canComment: false, canRequestCompletion: false, canApproveCompletion: false, canDelete: false }} onOpenChange={(v) => !v && setSelected(null)} onEdit={() => setEditing(true)} onDelete={() => setDeleting(true)} onProjectUpdated={(updated) => { setProjects((current) => current.map((item) => item.id === updated.id ? updated : item)); setSelected(updated); }} />
+    <ProjectDetail project={selected} open={!!selected && !editing && !deleting} backendEnabled={backendEnabled} fallbackPermissions={selected ? permissionsFor(selected) : { role: null, canEdit: false, canManageMembers: false, canComment: false, canRequestCompletion: false, canApproveCompletion: false, canDelete: false }} onOpenChange={(v) => !v && setSelected(null)} onEdit={() => setEditing(true)} onDelete={() => setDeleting(true)} onArchive={() => { if (selected) void toggleArchive(selected); }} onProjectUpdated={(updated) => { setProjects((current) => current.map((item) => item.id === updated.id ? updated : item)); setSelected(updated); }} />
     <EditProjectDialog project={selected} open={editing} workspaceMembers={workspaceMembers} onOpenChange={setEditing} onSave={(project) => { void saveProject(project); }} />
     <DeleteProjectDialog project={selected} open={deleting} onOpenChange={setDeleting} onConfirm={() => { if (selected) void deleteProject(selected); }} />
   </div>;
@@ -1571,6 +1631,7 @@ function ActivityHistory() {
 }
 
 type ProfileData = { name: string; email: string; role: string; image: string | null };
+type ActiveSession = { id: string; token: string; createdAt: string | Date; updatedAt: string | Date; expiresAt: string | Date; ipAddress?: string | null; userAgent?: string | null };
 
 function ProfilePage({ profile, backendEnabled, onSave, onLogout }: { profile: ProfileData; backendEnabled: boolean; onSave: (profile: ProfileData) => void | Promise<void>; onLogout: () => void }) {
   const [editing, setEditing] = useState(false);
@@ -1584,7 +1645,17 @@ function ProfilePage({ profile, backendEnabled, onSave, onLogout }: { profile: P
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordError, setPasswordError] = useState("");
   const [passwordNotice, setPasswordNotice] = useState("");
+  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const loadSessions = useCallback(async () => {
+    if (!backendEnabled) return;
+    setSessionsLoading(true);
+    const result = await authClient.listSessions();
+    if (!result.error && result.data) setActiveSessions(result.data as ActiveSession[]);
+    setSessionsLoading(false);
+  }, [backendEnabled]);
+  useEffect(() => { void loadSessions(); }, [loadSessions]);
   useEffect(() => { if (!editing) setDraft(profile); }, [profile, editing]);
   const initials = profile.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
   const previewImage = editing ? draft.image : profile.image;
@@ -1652,6 +1723,11 @@ function ProfilePage({ profile, backendEnabled, onSave, onLogout }: { profile: P
       setPasswordSaving(false);
     }
   };
+  const revokeSession = async (token: string) => {
+    const result = await authClient.revokeSession({ token });
+    if (result.error) { setPasswordError("Sesi belum dapat dicabut."); return; }
+    setActiveSessions((current) => current.filter((item) => item.token !== token));
+  };
   return <div className="fade-up"><SectionHeading eyebrow="Account" title="Profil anggota" description="Kelola identitas yang tampil pada kolaborasi dan riwayat aktivitas workspace." />
     <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
       <aside className="bg-[#193246] p-6 text-white"><Avatar className="h-20 w-20 ring-4 ring-white/10">{previewImage && <AvatarImage src={previewImage} alt={`Foto ${profile.name}`} className="object-cover" />}<AvatarFallback className="bg-[#e76f36] font-serif text-2xl text-white">{initials}</AvatarFallback></Avatar><h2 className="mt-5 font-serif text-2xl font-semibold">{profile.name}</h2><p className="mt-1 text-sm text-[#a9b7c0]">{profile.email}</p><Badge className="mt-4 bg-white/10 text-[#d9e1e6]">{profile.role}</Badge><div className="mt-8 border-t border-white/10 pt-5"><div className="flex items-center gap-2 text-xs text-[#a9b7c0]"><ShieldCheck size={15} className="text-[#e9a17d]" />Akun anggota workspace</div><button onClick={onLogout} className="mt-5 text-xs font-semibold text-[#e9a17d] hover:text-white">Keluar dari workspace</button></div></aside>
@@ -1673,6 +1749,7 @@ function ProfilePage({ profile, backendEnabled, onSave, onLogout }: { profile: P
         {passwordNotice && <div role="status" aria-live="polite" className="border-l-2 border-[#4f826c] bg-[#e5efe9] px-4 py-3 text-xs font-semibold text-[#356450]"><span className="flex items-center gap-2"><Check size={15} />{passwordNotice}</span></div>}
         <div className="flex justify-end"><Button type="submit" disabled={passwordSaving || currentPassword.length < 8 || newPassword.length < 8 || confirmPassword.length < 8}>{passwordSaving ? <LoaderCircle size={16} className="animate-spin" /> : <KeyRound size={16} />}{passwordSaving ? "Mengubah password..." : "Ubah password"}</Button></div>
       </form> : <div className="mt-6 border-l-2 border-[#d29b32] bg-[#f7efdc] px-4 py-3 text-xs leading-5 text-[#77581e]">Fitur ubah password tersedia setelah masuk menggunakan akun workspace, bukan dalam mode demo.</div>}
+      {backendEnabled && <div className="mt-9 border-t border-[#e5e2da] pt-6"><div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-bold text-[#183044]">Sesi aktif</h3><p className="mt-1 text-xs text-[#7b8387]">Cabut akses browser atau perangkat yang tidak dikenali.</p></div><Button size="sm" variant="outline" onClick={() => void loadSessions()} disabled={sessionsLoading}>{sessionsLoading ? <LoaderCircle size={14} className="animate-spin" /> : <History size={14} />}Muat ulang</Button></div><div className="mt-4 divide-y divide-[#ebe8df] border-y border-[#ebe8df]">{activeSessions.map((item) => <div key={item.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center"><ShieldCheck size={17} className="shrink-0 text-[#4f826c]" /><div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold text-[#183044]">{item.userAgent || "Browser tidak dikenal"}</div><div className="mt-1 text-[10px] text-[#8a9194]">{item.ipAddress || "IP tidak tersedia"} · aktif {new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.updatedAt))}</div></div><Button size="sm" variant="outline" className="border-[#e2b9b5] text-[#b9433d]" onClick={() => void revokeSession(item.token)}>Cabut sesi</Button></div>)}{!sessionsLoading && activeSessions.length === 0 && <div className="py-8 text-center text-xs text-[#8a9194]">Tidak ada sesi aktif lain.</div>}</div></div>}
     </section>
   </div>;
 }

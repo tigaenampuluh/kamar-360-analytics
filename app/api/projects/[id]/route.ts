@@ -39,6 +39,7 @@ export async function PATCH(request: Request, { params }: Context) {
   if (!id) return badRequest("Invalid project id");
   const current = await findProjectById(id);
   if (!current) return notFound("Project");
+  if (current.archivedAt) return forbidden("Pulihkan project dari arsip sebelum mengubahnya");
   const access = await getProjectAccess(id, session.user.id, session.user.email);
   if (!access.canEdit) return forbidden("Hanya Admin atau Lead project yang dapat mengubah project");
   const parsed = updateProjectSchema.safeParse(await request.json().catch(() => null));

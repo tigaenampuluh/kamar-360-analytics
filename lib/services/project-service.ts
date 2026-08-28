@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, ilike, lt, ne, or, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, ilike, isNotNull, isNull, lt, ne, or, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { activityLogs, assets, projectMemberships, projects } from "@/db/schema";
 import type { NewProjectRecord, ProjectChanges, ProjectFilters } from "@/lib/models/project";
@@ -8,6 +8,7 @@ import { notifyProjectAssignments, notifyProjectCreated, notifyProjectUpdated } 
 export async function listProjects(filters: ProjectFilters = {}) {
   const conditions: SQL[] = [];
   const search = filters.search?.trim();
+  conditions.push(filters.archived ? isNotNull(projects.archivedAt) : isNull(projects.archivedAt));
 
   if (search) {
     conditions.push(or(

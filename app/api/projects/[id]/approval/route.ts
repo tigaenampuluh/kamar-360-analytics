@@ -22,6 +22,7 @@ export async function POST(request: Request, { params }: Context) {
   if (!Number.isInteger(id) || id < 1) return badRequest("Invalid project id");
   const project = await findProjectById(id);
   if (!project) return notFound("Project");
+  if (project.archivedAt) return badRequest("Project arsip harus dipulihkan sebelum meminta approval");
   if (project.status === "Done") return badRequest("Project sudah berstatus Done");
   const access = await getProjectAccess(id, session.user.id, session.user.email);
   if (!access.canRequestCompletion) return forbidden("Hanya Lead atau Anggota project yang dapat meminta penyelesaian");

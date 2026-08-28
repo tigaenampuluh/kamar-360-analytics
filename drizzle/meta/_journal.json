@@ -43,6 +43,13 @@
       "when": 1787920822514,
       "tag": "0005_fuzzy_master_mold",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787923188066,
+      "tag": "0006_wild_nemesis",
+      "breakpoints": true
     }
   ]
 }

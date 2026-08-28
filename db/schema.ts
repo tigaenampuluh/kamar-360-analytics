@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm";
-import { boolean, index, integer, jsonb, pgTable, primaryKey, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).defaultNow().notNull();
@@ -56,6 +56,13 @@ export const verification = pgTable("verification", {
   updatedAt: updatedAt(),
 }, (table) => [index("idx_verification_identifier").on(table.identifier)]);
 
+export const rateLimit = pgTable("rateLimit", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull(),
+  count: integer("count").notNull(),
+  lastRequest: bigint("lastRequest", { mode: "number" }).notNull(),
+}, (table) => [uniqueIndex("rateLimit_key_unique").on(table.key)]);
+
 export const projects = pgTable("projects", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
@@ -63,6 +70,8 @@ export const projects = pgTable("projects", {
   pic: text("pic").notNull(),
   picInitials: text("pic_initials").notNull(),
   primaryPicUserId: text("primary_pic_user_id").references(() => user.id, { onDelete: "set null" }),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  archivedBy: text("archived_by").references(() => user.id, { onDelete: "set null" }),
   deadline: timestamp("deadline", { withTimezone: true }).notNull(),
   doneAt: timestamp("done_at", { withTimezone: true }),
   status: text("status", { enum: ["On Going", "Delay", "Pending", "Revisi", "Done"] }).notNull().default("Pending"),
@@ -76,6 +85,7 @@ export const projects = pgTable("projects", {
   index("idx_projects_status_done_at").on(table.status, table.doneAt),
   index("idx_projects_pic").on(table.pic),
   index("idx_projects_primary_pic_user_id").on(table.primaryPicUserId),
+  index("idx_projects_archived_at").on(table.archivedAt),
   index("idx_projects_category").on(table.category),
 ]);
 
@@ -294,4 +304,4 @@ export const notificationRelations = relations(notifications, ({ one }) => ({
   agenda: one(agendas, { fields: [notifications.agendaId], references: [agendas.id] }),
 }));
 
-export const authSchema = { user, session, account, verification };
+export const authSchema = { user, session, account, verification, rateLimit };

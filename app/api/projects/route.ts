@@ -37,6 +37,7 @@ export async function GET(request: Request) {
     status: (url.searchParams.get("status") || undefined) as ProjectStatus | undefined,
     pic: url.searchParams.get("pic") || undefined,
     category: url.searchParams.get("category") || undefined,
+    archived: url.searchParams.get("archived") === "true",
     ...period,
   });
   return Response.json({ data: rows });

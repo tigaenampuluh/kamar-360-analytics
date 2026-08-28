@@ -16,6 +16,7 @@ export async function POST(request: Request, { params }: Context) {
   if (!Number.isInteger(id) || id < 1) return badRequest("Invalid project id");
   const project = await findProjectById(id);
   if (!project) return notFound("Project");
+  if (project.archivedAt) return badRequest("Project arsip bersifat hanya-baca. Pulihkan sebelum berkomentar");
   const access = await getProjectAccess(id, session.user.id, session.user.email);
   if (!access.canComment) return forbidden("Viewer dan non-anggota tidak dapat menambahkan komentar");
   const parsed = projectCommentSchema.safeParse(await request.json().catch(() => null));

@@ -24,6 +24,17 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 7,
     updateAge: 60 * 60 * 24,
   },
+  rateLimit: {
+    enabled: true,
+    storage: "database",
+    window: 60,
+    max: 100,
+    customRules: {
+      "/sign-in/email": { window: 60, max: 5 },
+      "/sign-up/email": { window: 60 * 10, max: 5 },
+      "/change-password": { window: 60 * 10, max: 5 },
+    },
+  },
   trustedOrigins: [process.env.BETTER_AUTH_URL ?? "http://localhost:3000"],
   hooks: {
     before: createAuthMiddleware(async (context) => {

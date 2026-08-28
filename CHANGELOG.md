@@ -2,6 +2,20 @@
 
 All notable production changes to 360 - Center of Research are documented here.
 
+## [0.3.0] - 2026-08-28
+
+### Added
+
+- Global database-backed search across projects, comments, agendas, and assets.
+- Recoverable project archives with permission-aware archive and restore actions.
+- Active-session management from the member profile.
+- Database-backed authentication rate limiting and production security headers.
+
+### Changed
+
+- Archived projects are excluded from active dashboards, calendar data, and Kanban counts.
+- Archived projects are read-only until restored.
+
 ## [0.2.0] - 2026-08-28
 
 ### Added
@@ -34,5 +48,6 @@ First formally versioned production baseline.
 - Project data and dashboard counts now stay synchronized across the main workspace views.
 - Login sessions end when the browser closes or after 10 minutes without activity.
 
+[0.3.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.3.0
 [0.2.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.2.0
 [0.1.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.1.0
