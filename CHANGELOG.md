@@ -2,6 +2,13 @@
 
 All notable production changes to 360 - Center of Research are documented here.
 
+## [0.3.1] - 2026-08-29
+
+### Changed
+
+- Kanban now fits all five status columns in one horizontal desktop row without requiring horizontal scrolling.
+- Project cards, status headers, spacing, avatars, priorities, and deadline indicators use a more compact layout.
+
 ## [0.3.0] - 2026-08-28
 
 ### Added
@@ -48,6 +55,7 @@ First formally versioned production baseline.
 - Project data and dashboard counts now stay synchronized across the main workspace views.
 - Login sessions end when the browser closes or after 10 minutes without activity.
 
+[0.3.1]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.3.1
 [0.3.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.3.0
 [0.2.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.2.0
 [0.1.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.1.0
