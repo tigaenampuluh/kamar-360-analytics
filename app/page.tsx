@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Archive,
@@ -207,11 +207,69 @@ const teamColors: Record<string, string> = {
   MK: "bg-[#f5e5e5] text-[#8a5050]",
 };
 
-function MiniAvatar({ initials, className }: { initials: string; className?: string }) {
+type ActiveMember = {
+  id: string;
+  name: string;
+  image: string | null;
+  lastSeenAt: string;
+  isCurrentUser: boolean;
+};
+
+function memberInitials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "RR";
+}
+
+function MiniAvatar({ initials, image, name, className }: { initials: string; image?: string | null; name?: string; className?: string }) {
   return (
-    <Avatar className={cn("h-7 w-7 ring-2 ring-white", className)}>
-      <AvatarFallback className={cn("text-[10px]", teamColors[initials] || "")}>{initials}</AvatarFallback>
+    <Avatar className={cn("h-7 w-7 ring-2 ring-white", className)} title={name}>
+      {image && <AvatarImage src={image} alt={name ? `Foto ${name}` : "Foto profil"} />}
+      <AvatarFallback className={cn("text-[10px]", teamColors[initials] || "bg-[#dfeae5] text-[#315b4b]")}>{initials}</AvatarFallback>
     </Avatar>
+  );
+}
+
+function ActiveTeam({ profile, backendEnabled }: { profile: ProfileData; backendEnabled: boolean }) {
+  const currentMember = useMemo<ActiveMember>(() => ({
+    id: backendEnabled ? profile.email : "demo-user",
+    name: profile.name,
+    image: profile.image,
+    lastSeenAt: new Date().toISOString(),
+    isCurrentUser: true,
+  }), [backendEnabled, profile.email, profile.image, profile.name]);
+  const [members, setMembers] = useState<ActiveMember[]>([currentMember]);
+
+  useEffect(() => {
+    if (!backendEnabled) {
+      setMembers([currentMember]);
+      return;
+    }
+    const controller = new AbortController();
+    const loadPresence = async () => {
+      try {
+        const response = await fetch("/api/presence", { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error("Gagal memuat anggota aktif");
+        const payload = await response.json() as { data: ActiveMember[] };
+        setMembers(payload.data.map((member) => member.isCurrentUser ? { ...member, name: profile.name, image: profile.image } : member));
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setMembers([currentMember]);
+      }
+    };
+    void loadPresence();
+    const refresh = window.setInterval(() => void loadPresence(), 60_000);
+    return () => {
+      controller.abort();
+      window.clearInterval(refresh);
+    };
+  }, [backendEnabled, currentMember, profile.image, profile.name]);
+
+  const visibleMembers = (members.length ? members : [currentMember]).slice(0, 4);
+  const remaining = Math.max(0, members.length - visibleMembers.length);
+  return (
+    <div className="mt-4 flex items-center px-2" aria-label={`${members.length || 1} anggota aktif dalam 5 menit terakhir`}>
+      {visibleMembers.map((member, index) => <span key={member.id} className={cn("relative", index > 0 && "-ml-2")} title={`${member.name} · aktif sekarang`}><MiniAvatar initials={memberInitials(member.name)} image={member.image} name={member.name} className="ring-[#193246]" /><i className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-[#64c28a] ring-2 ring-[#193246]" /></span>)}
+      {remaining > 0 && <span className="ml-3 text-xs text-[#9eb0bc]">+{remaining} lainnya</span>}
+      {remaining === 0 && visibleMembers.length === 1 && <span className="ml-3 truncate text-xs text-[#9eb0bc]">{visibleMembers[0].name.split(" ")[0]} aktif</span>}
+    </div>
   );
 }
 
@@ -219,7 +277,7 @@ function BrandMark({ className }: { className?: string }) {
   return <span role="img" aria-label="Logo 360 Center of Research" className={cn("block shrink-0 overflow-hidden rounded-lg bg-white shadow-sm", className)} style={{ backgroundImage: "url('/center-of-research-360.png')", backgroundPosition: "50% 43%", backgroundRepeat: "no-repeat", backgroundSize: "260%" }} />;
 }
 
-function Sidebar({ active, onChange, open, onClose, userName, projectCount, isAdmin, onProfile, onLogout }: { active: View; onChange: (v: View) => void; open: boolean; onClose: () => void; userName: string; projectCount: number; isAdmin: boolean; onProfile: () => void; onLogout: () => void }) {
+function Sidebar({ active, onChange, open, onClose, profile, projectCount, isAdmin, backendEnabled, onProfile, onLogout }: { active: View; onChange: (v: View) => void; open: boolean; onClose: () => void; profile: ProfileData; projectCount: number; isAdmin: boolean; backendEnabled: boolean; onProfile: () => void; onLogout: () => void }) {
   return (
     <>
       {open && <button className="fixed inset-0 z-30 bg-[#122838]/45 lg:hidden" onClick={onClose} aria-label="Tutup navigasi" />}
@@ -251,16 +309,13 @@ function Sidebar({ active, onChange, open, onClose, userName, projectCount, isAd
         </nav>
 
         <div className="mt-8 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#7790a0]">Tim aktif</div>
-        <div className="mt-4 flex items-center px-2">
-          {["NP", "AW", "DA", "FR"].map((x, i) => <MiniAvatar key={x} initials={x} className={cn(i > 0 && "-ml-2", "ring-[#193246]")} />)}
-          <span className="ml-3 text-xs text-[#9eb0bc]">+2 lainnya</span>
-        </div>
+        <ActiveTeam profile={profile} backendEnabled={backendEnabled} />
 
         <div className="mt-auto border-t border-white/10 pt-4">
           <button onClick={onProfile} className={cn("flex w-full items-center gap-3 rounded-md p-2 text-left hover:bg-white/[.06]", active === "profile" && "bg-white/10")} title="Buka profil">
-            <Avatar className="h-9 w-9"><AvatarFallback className="bg-[#e76f36] text-white">{userName.split(/\s+/).slice(0, 2).map((x) => x[0]).join("").toUpperCase()}</AvatarFallback></Avatar>
+            <Avatar className="h-9 w-9">{profile.image && <AvatarImage src={profile.image} alt={`Foto ${profile.name}`} />}<AvatarFallback className="bg-[#e76f36] text-white">{memberInitials(profile.name)}</AvatarFallback></Avatar>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold">{userName}</span>
+              <span className="block truncate text-sm font-semibold">{profile.name}</span>
               <span className="block text-xs text-[#91a4b0]">Lihat & edit profil</span>
             </span>
             <MoreHorizontal size={17} className="text-[#91a4b0]" />
@@ -330,7 +385,7 @@ function fromApiNotification(notification: ApiNotification): NotificationAlert {
   };
 }
 
-function Header({ active, onMenu, userName, onProfile, onNavigate, backendEnabled }: { active: View; onMenu: () => void; userName: string; onProfile: () => void; onNavigate: (view: View) => void; backendEnabled: boolean }) {
+function Header({ active, onMenu, profile, onProfile, onNavigate, backendEnabled }: { active: View; onMenu: () => void; profile: ProfileData; onProfile: () => void; onNavigate: (view: View) => void; backendEnabled: boolean }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [alerts, setAlerts] = useState<NotificationAlert[]>(notificationAlerts);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
@@ -440,8 +495,8 @@ function Header({ active, onMenu, userName, onProfile, onNavigate, backendEnable
           </div>}
         </div>
         <button onClick={onProfile} className="ml-2 hidden items-center gap-2 rounded-full border border-[#dcd9d1] bg-white py-1 pl-1 pr-3 hover:border-[#c9c5ba] sm:flex">
-          <MiniAvatar initials={userName.split(/\s+/).slice(0, 2).map((x) => x[0]).join("").toUpperCase()} />
-          <span className="text-xs font-semibold">{userName.split(" ")[0]}</span>
+          <MiniAvatar initials={memberInitials(profile.name)} image={profile.image} name={profile.name} />
+          <span className="text-xs font-semibold">{profile.name.split(" ")[0]}</span>
           <ChevronDown size={13} className="text-[#8a9194]" />
         </button>
       </div>
@@ -1529,7 +1584,6 @@ export default function Home() {
   if (isPending || !demoReady) return <div className="grid min-h-screen place-items-center bg-[#f5f3ed] text-[#e76f36]"><LoaderCircle className="animate-spin" size={28} /></div>;
   if (!session && !demoMode) return <AuthScreen demoEnabled={process.env.NEXT_PUBLIC_ENABLE_DEMO !== "false"} onEnterDemo={() => { window.sessionStorage.setItem("ruang-riset-demo", "true"); setProjects(initialProjects); setDemoMode(true); }} />;
 
-  const userName = profile.name;
   const logout = () => { if (!session) { window.sessionStorage.removeItem("ruang-riset-demo"); setProjects([]); setDemoMode(false); setActive("dashboard"); return; } void authClient.signOut().then(() => window.location.reload()); };
   const saveProfile = async (nextProfile: ProfileData) => {
     if (!session) {
@@ -1557,9 +1611,9 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#f5f3ed]">
-      <Sidebar active={active} onChange={setActive} open={menuOpen} onClose={() => setMenuOpen(false)} userName={userName} projectCount={projects.length} isAdmin={isAdmin} onProfile={() => { setActive("profile"); setMenuOpen(false); }} onLogout={logout} />
+      <Sidebar active={active} onChange={setActive} open={menuOpen} onClose={() => setMenuOpen(false)} profile={profile} projectCount={projects.length} isAdmin={isAdmin} backendEnabled={!!session} onProfile={() => { setActive("profile"); setMenuOpen(false); }} onLogout={logout} />
       <div className="lg:pl-[252px]">
-        <Header active={active} onMenu={() => setMenuOpen(true)} userName={userName} onProfile={() => setActive("profile")} onNavigate={setActive} backendEnabled={!!session} />
+        <Header active={active} onMenu={() => setMenuOpen(true)} profile={profile} onProfile={() => setActive("profile")} onNavigate={setActive} backendEnabled={!!session} />
         <main className="mx-auto max-w-[1600px] px-5 py-7 md:px-8 md:py-9">{page}</main>
         <footer className="mx-5 flex items-center justify-between border-t border-[#ddd9d0] py-5 text-[10px] uppercase tracking-[.14em] text-[#989d9f] md:mx-8"><span>360 - Center of Research © 2026</span><span className="flex items-center gap-1.5"><Sparkles size={11} /> Keep curiosity alive</span></footer>
       </div>
