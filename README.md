@@ -43,3 +43,13 @@ The first user can register from the sign-up form. Email/password sessions are m
 All workspace routes except health and authentication require a valid Better Auth session. Project changes automatically create activity records, and moving a project to `Done` creates its archive entry.
 
 The schema uses timezone-aware timestamps, JSONB asset tags, foreign keys, and indexes for the primary project, calendar, archive, authentication, and activity queries.
+
+## Versioning and releases
+
+The application follows Semantic Versioning and displays the current `package.json` version in its footer.
+
+- Patch (`0.1.0` → `0.1.1`) for backward-compatible fixes and small refinements.
+- Minor (`0.1.0` → `0.2.0`) for new backward-compatible features.
+- Major (`0.x.x` → `1.0.0`) when the primary workflows are declared stable; later major increments indicate incompatible changes.
+
+Every production release must update the version in `package.json`, add a dated entry to `CHANGELOG.md`, and publish a matching Git tag and GitHub Release such as `v0.1.0`.

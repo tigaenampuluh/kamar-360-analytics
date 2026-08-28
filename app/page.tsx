@@ -47,12 +47,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
+import packageInfo from "@/package.json";
 
 type View = "dashboard" | "tracker" | "calendar" | "library" | "activity" | "admin" | "profile";
 type Status = "On Going" | "Delay" | "Pending" | "Revisi" | "Done";
 type Priority = "High" | "Medium" | "Low";
 
 const WIB_TIME_ZONE = "Asia/Jakarta";
+const APP_VERSION = packageInfo.version;
 const AUTH_IDLE_TIMEOUT_MS = 10 * 60 * 1_000;
 const AUTH_ACTIVITY_STORAGE_KEY = "360-auth-last-activity";
 
@@ -1798,7 +1800,7 @@ export default function Home() {
       <div className="lg:pl-[252px]">
         <Header active={active} onMenu={() => setMenuOpen(true)} profile={profile} onProfile={() => setActive("profile")} onNavigate={setActive} backendEnabled={!!session} />
         <main className="mx-auto max-w-[1600px] px-5 py-7 md:px-8 md:py-9">{page}</main>
-        <footer className="mx-5 flex items-center justify-between border-t border-[#ddd9d0] py-5 text-[10px] uppercase tracking-[.14em] text-[#989d9f] md:mx-8"><span>360 - Center of Research © 2026</span><span className="flex items-center gap-1.5"><Sparkles size={11} /> Keep curiosity alive</span></footer>
+        <footer className="mx-5 flex items-center justify-between border-t border-[#ddd9d0] py-5 text-[10px] uppercase tracking-[.14em] text-[#989d9f] md:mx-8"><span>360 - Center of Research © 2026 · v{APP_VERSION}</span><span className="flex items-center gap-1.5"><Sparkles size={11} /> Keep curiosity alive</span></footer>
       </div>
     </div>
   );
