@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { and, gte, lte, ne, sql } from "drizzle-orm";
+import { and, eq, gte, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { agendas, notifications, projects, user } from "@/db/schema";
+import { agendas, notifications, projectMemberships, projects, user } from "@/db/schema";
 
 type NotificationTarget = typeof notifications.targetView.enumValues[number];
 type NotificationKind = typeof notifications.kind.enumValues[number];
@@ -32,23 +32,6 @@ type WorkspaceNotification = {
   agendaId?: number | null;
 };
 
-async function createWorkspaceNotification(input: WorkspaceNotification) {
-  const recipients = await db.select({ id: user.id }).from(user).where(ne(user.id, input.actorUserId));
-  if (recipients.length === 0) return;
-
-  const eventId = randomUUID();
-  await db.insert(notifications).values(recipients.map((recipient) => ({
-    userId: recipient.id,
-    projectId: input.projectId ?? null,
-    agendaId: input.agendaId ?? null,
-    kind: input.kind,
-    title: input.title,
-    message: input.message,
-    targetView: input.targetView,
-    dedupeKey: `event:${eventId}`,
-  })));
-}
-
 async function createTargetedNotifications(userIds: string[], input: Omit<WorkspaceNotification, "actorUserId"> & { actorUserId: string }) {
   const recipients = Array.from(new Set(userIds)).filter((userId) => userId !== input.actorUserId);
   if (recipients.length === 0) return;
@@ -65,8 +48,28 @@ async function createTargetedNotifications(userIds: string[], input: Omit<Worksp
   })));
 }
 
-export function notifyProjectCreated(project: ProjectRecord, actorUserId: string, actorName: string) {
-  return createWorkspaceNotification({
+async function getProjectRecipientIds(project: ProjectRecord) {
+  const memberships = await db.select({ userId: projectMemberships.userId })
+    .from(projectMemberships)
+    .where(eq(projectMemberships.projectId, project.id));
+  return Array.from(new Set([
+    ...memberships.map((membership) => membership.userId),
+    ...(project.primaryPicUserId ? [project.primaryPicUserId] : []),
+  ]));
+}
+
+async function getAgendaRecipientIds(agenda: AgendaRecord) {
+  if (agenda.projectId) {
+    const [project] = await db.select().from(projects).where(eq(projects.id, agenda.projectId)).limit(1);
+    return project ? getProjectRecipientIds(project) : [];
+  }
+  const matchingMembers = await db.select({ id: user.id }).from(user)
+    .where(sql`lower(trim(${user.name})) = lower(trim(${agenda.pic}))`);
+  return matchingMembers.map((member) => member.id);
+}
+
+export async function notifyProjectCreated(project: ProjectRecord, actorUserId: string, actorName: string) {
+  return createTargetedNotifications(await getProjectRecipientIds(project), {
     actorUserId,
     kind: "project",
     title: "Project baru ditambahkan",
@@ -76,8 +79,8 @@ export function notifyProjectCreated(project: ProjectRecord, actorUserId: string
   });
 }
 
-export function notifyProjectUpdated(project: ProjectRecord, actorUserId: string, actorName: string, detail: string) {
-  return createWorkspaceNotification({
+export async function notifyProjectUpdated(project: ProjectRecord, actorUserId: string, actorName: string, detail: string) {
+  return createTargetedNotifications(await getProjectRecipientIds(project), {
     actorUserId,
     kind: "activity",
     title: "Project diperbarui",
@@ -131,8 +134,8 @@ export function notifyCompletionResolved(project: ProjectRecord, actorUserId: st
   });
 }
 
-export function notifyAgendaChanged(agenda: AgendaRecord, actorUserId: string, actorName: string, action: "ditambahkan" | "diperbarui") {
-  return createWorkspaceNotification({
+export async function notifyAgendaChanged(agenda: AgendaRecord, actorUserId: string, actorName: string, action: "ditambahkan" | "diperbarui") {
+  return createTargetedNotifications(await getAgendaRecipientIds(agenda), {
     actorUserId,
     kind: "agenda",
     title: `Agenda ${action}`,
@@ -145,10 +148,69 @@ export function notifyAgendaChanged(agenda: AgendaRecord, actorUserId: string, a
 
 export async function ensureUpcomingNotifications(userId: string, now = new Date()) {
   const windowEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const [currentUser] = await db.select({ name: user.name }).from(user).where(eq(user.id, userId)).limit(1);
+  if (!currentUser) return;
+  const involvedInProject = (projectId: typeof projects.id, primaryPicUserId: typeof projects.primaryPicUserId) => or(
+    eq(primaryPicUserId, userId),
+    sql`exists (
+      select 1 from ${projectMemberships} membership
+      where membership.project_id = ${projectId}
+        and membership.user_id = ${userId}
+    )`,
+  );
   const [dueProjects, dueAgendas] = await Promise.all([
-    db.select().from(projects).where(and(gte(projects.deadline, now), lte(projects.deadline, windowEnd), ne(projects.status, "Done"))),
-    db.select().from(agendas).where(and(gte(agendas.startTime, now), lte(agendas.startTime, windowEnd))),
+    db.select().from(projects).where(and(
+      gte(projects.deadline, now),
+      lte(projects.deadline, windowEnd),
+      ne(projects.status, "Done"),
+      involvedInProject(projects.id, projects.primaryPicUserId),
+    )),
+    db.select().from(agendas).where(and(
+      gte(agendas.startTime, now),
+      lte(agendas.startTime, windowEnd),
+      or(
+        and(
+          isNotNull(agendas.projectId),
+          sql`exists (
+            select 1 from ${projects} related_project
+            where related_project.id = ${agendas.projectId}
+              and (
+                related_project.primary_pic_user_id = ${userId}
+                or exists (
+                  select 1 from ${projectMemberships} membership
+                  where membership.project_id = related_project.id
+                    and membership.user_id = ${userId}
+                )
+              )
+          )`,
+        ),
+        and(isNull(agendas.projectId), sql`lower(trim(${agendas.pic})) = lower(trim(${currentUser.name}))`),
+      ),
+    )),
   ]);
+
+  await db.execute(sql`
+    delete from ${notifications} notification
+    using ${projects} related_project
+    where notification.user_id = ${userId}
+      and notification.project_id = related_project.id
+      and notification.kind in ('deadline', 'project', 'activity', 'agenda')
+      and related_project.primary_pic_user_id is distinct from ${userId}
+      and not exists (
+        select 1 from ${projectMemberships} membership
+        where membership.project_id = related_project.id
+          and membership.user_id = ${userId}
+      )
+  `);
+  await db.execute(sql`
+    delete from ${notifications} notification
+    using ${agendas} related_agenda
+    where notification.user_id = ${userId}
+      and notification.agenda_id = related_agenda.id
+      and notification.kind = 'agenda'
+      and related_agenda.project_id is null
+      and lower(trim(related_agenda.pic)) <> lower(trim(${currentUser.name}))
+  `);
 
   const values: Array<typeof notifications.$inferInsert> = [
     ...dueProjects.map((project) => ({

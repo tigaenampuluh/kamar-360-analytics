@@ -2,6 +2,15 @@
 
 All notable production changes to 360 - Center of Research are documented here.
 
+## [0.5.1] - 2026-08-30
+
+### Changed
+
+- The Dashboard Deadline & Agenda panel now uses compact, wrapping rows that remain inside their column without horizontal scrolling.
+- Project-created, project-update, deadline, and project-linked agenda notifications now go only to the project's PIC and assigned members.
+- Standalone agenda notifications now go only to the member whose account name matches the agenda PIC.
+- Previously broadcast project/agenda notifications are removed automatically from unrelated users when notifications refresh.
+
 ## [0.5.0] - 2026-08-30
 
 ### Added
@@ -85,6 +94,7 @@ First formally versioned production baseline.
 - Project data and dashboard counts now stay synchronized across the main workspace views.
 - Login sessions end when the browser closes or after 10 minutes without activity.
 
+[0.5.1]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.5.1
 [0.5.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.5.0
 [0.4.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.4.0
 [0.3.1]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.3.1

@@ -832,33 +832,30 @@ type DeadlineReminderItem = {
 
 function DeadlineReminder({ items, onOpenCalendar }: { items: DeadlineReminderItem[]; onOpenCalendar: () => void }) {
   return (
-    <section className="bg-[#193246] p-5 text-white md:p-6">
+    <section className="min-w-0 overflow-hidden bg-[#193246] p-4 text-white md:p-5">
       <div className="flex items-start justify-between">
-        <div>
+        <div className="min-w-0">
           <div className="text-[10px] font-bold uppercase tracking-[0.17em] text-[#e9a17d]">Deadline & agenda</div>
-          <h2 className="mt-2 font-serif text-2xl font-semibold">7 hari ke depan</h2>
+          <h2 className="mt-1.5 font-serif text-xl font-semibold">7 hari ke depan</h2>
         </div>
-        <CalendarDays className="text-[#e9a17d]" size={22} />
+        <CalendarDays className="shrink-0 text-[#e9a17d]" size={20} />
       </div>
-      <div className="mt-6 space-y-1">
+      <div className="mt-4">
         {items.map((item) => (
-          <div key={`${item.day}-${item.title}`} className="flex items-center gap-4 border-b border-white/10 py-3 last:border-0">
-            <div className="w-9 text-center">
-              <div className="font-serif text-2xl font-semibold leading-none">{item.day}</div>
-              <div className="mt-1 text-[9px] uppercase tracking-widest text-[#90a4b1]">{item.month}</div>
+          <div key={`${item.day}-${item.title}`} className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] items-start gap-3 border-b border-white/10 py-2.5 last:border-0">
+            <div className="pt-0.5 text-center">
+              <div className="font-serif text-xl font-semibold leading-none">{item.day}</div>
+              <div className="mt-1 text-[8px] uppercase tracking-widest text-[#90a4b1]">{item.month}</div>
             </div>
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <div className="truncate text-sm font-semibold">{item.title}</div>
-                <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide", item.type === "Deadline" ? "bg-[#d8564e]/20 text-[#f0a09b]" : "bg-[#3578a8]/25 text-[#9dcced]")}>{item.type}</span>
-              </div>
-              <div className="mt-1 text-[11px] text-[#9eb0bc]">{item.meta}</div>
+              <div className="line-clamp-2 break-words text-xs font-semibold leading-4">{item.title}</div>
+              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"><span className="truncate text-[10px] text-[#9eb0bc]">{item.meta}</span><span className={cn("shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide", item.type === "Deadline" ? "bg-[#d8564e]/20 text-[#f0a09b]" : "bg-[#3578a8]/25 text-[#9dcced]")}>{item.type}</span></div>
             </div>
           </div>
         ))}
         {items.length === 0 && <div className="border border-dashed border-white/15 px-4 py-8 text-center text-xs text-[#9eb0bc]">Belum ada deadline project dalam 7 hari ke depan.</div>}
       </div>
-      <button onClick={onOpenCalendar} className="mt-5 flex items-center gap-2 text-xs font-bold text-[#e9a17d] hover:underline">Buka kalender <ArrowUpRight size={14} /></button>
+      <button onClick={onOpenCalendar} className="mt-3 flex items-center gap-2 text-xs font-bold text-[#e9a17d] hover:underline">Buka kalender <ArrowUpRight size={14} /></button>
     </section>
   );
 }
@@ -935,7 +932,7 @@ function Dashboard({ projects, goTo, backendEnabled }: { projects: Project[]; go
         <StatCard label="Done" value={String(counts.Done)} change={`${percentage(counts.Done)}% dari total`} icon={Check} accent="#4f826c" />
       </div>
 
-      <div className="mt-7 grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+      <div className="mt-7 grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(300px,1fr)]">
         <section className="bg-white p-5 md:p-6">
           <div className="mb-5 flex items-center justify-between"><div><h2 className="font-serif text-xl font-semibold">Gambaran project</h2><p className="mt-1 text-xs text-[#7b8387]">Distribusi pekerjaan aktif per status</p></div><button onClick={() => goTo("tracker")} className="text-xs font-bold text-[#e76f36] hover:underline">Lihat board</button></div>
           <div className="grid gap-6 md:grid-cols-[190px_1fr] md:items-center">
