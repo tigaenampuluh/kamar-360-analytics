@@ -2,6 +2,18 @@
 
 All notable production changes to 360 - Center of Research are documented here.
 
+## [1.0.0] - 2026-08-30
+
+### Released
+
+- First stable production release of 360 - Center of Research.
+- Core workspace flows cover Dashboard, Project Tracker/Kanban, Calendar Planner, Asset & Library, Activity History, member administration, notifications, announcements, project collaboration, version history, backup and recovery, and account security.
+- Production acceptance testing on TestSprite completed with 31 of 32 tests passing, no application failures, and one asset-link test blocked by external Canva/Cloudflare verification.
+
+### Changed
+
+- The application version displayed on the login screen, workspace sidebar, and footer is now `v1.0.0`.
+
 ## [0.5.1] - 2026-08-30
 
 ### Changed
@@ -94,6 +106,7 @@ First formally versioned production baseline.
 - Project data and dashboard counts now stay synchronized across the main workspace views.
 - Login sessions end when the browser closes or after 10 minutes without activity.
 
+[1.0.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v1.0.0
 [0.5.1]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.5.1
 [0.5.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.5.0
 [0.4.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.4.0
