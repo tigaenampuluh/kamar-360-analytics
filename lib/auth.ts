@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError, createAuthMiddleware } from "better-auth/api";
+import { username } from "better-auth/plugins";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { authSchema, signupInvites } from "@/db/schema";
@@ -31,11 +32,13 @@ export const auth = betterAuth({
     max: 100,
     customRules: {
       "/sign-in/email": { window: 60, max: 5 },
+      "/sign-in/username": { window: 60, max: 5 },
       "/sign-up/email": { window: 60 * 10, max: 5 },
       "/change-password": { window: 60 * 10, max: 5 },
     },
   },
   trustedOrigins: [process.env.BETTER_AUTH_URL ?? "http://localhost:3000"],
+  plugins: [username({ displayUsername: false })],
   hooks: {
     before: createAuthMiddleware(async (context) => {
       if (!isProduction || context.path !== "/sign-up/email") return;

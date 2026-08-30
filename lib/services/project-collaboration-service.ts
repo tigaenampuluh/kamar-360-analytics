@@ -17,12 +17,13 @@ export type WorkspaceMember = {
   id: string;
   name: string;
   email: string;
+  username: string | null;
   image: string | null;
   workspaceRole: "Admin" | "Anggota";
 };
 
 export async function listWorkspaceMembers(): Promise<WorkspaceMember[]> {
-  const rows = await db.select({ id: user.id, name: user.name, email: user.email, image: user.image })
+  const rows = await db.select({ id: user.id, name: user.name, email: user.email, username: user.username, image: user.image })
     .from(user)
     .orderBy(asc(user.name));
   return rows.map((member) => ({
@@ -32,7 +33,7 @@ export async function listWorkspaceMembers(): Promise<WorkspaceMember[]> {
 }
 
 export async function findWorkspaceMember(userId: string) {
-  const [member] = await db.select({ id: user.id, name: user.name, email: user.email, image: user.image })
+  const [member] = await db.select({ id: user.id, name: user.name, email: user.email, username: user.username, image: user.image })
     .from(user)
     .where(eq(user.id, userId))
     .limit(1);
@@ -73,6 +74,7 @@ export async function getProjectMembers(projectId: number) {
     userId: user.id,
     name: user.name,
     email: user.email,
+    username: user.username,
     image: user.image,
     role: projectMemberships.role,
   }).from(projectMemberships)
@@ -88,6 +90,7 @@ export async function getMembersForProjects(projectIds: number[]) {
     userId: user.id,
     name: user.name,
     email: user.email,
+    username: user.username,
     image: user.image,
     role: projectMemberships.role,
   }).from(projectMemberships)

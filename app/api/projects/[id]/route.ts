@@ -7,7 +7,6 @@ import {
   getProjectAccess,
   getProjectMembers,
   normalizeAssignments,
-  syncProjectMembers,
   validateAssignments,
 } from "@/lib/services/project-collaboration-service";
 import { notifyProjectAssignments } from "@/lib/services/notification-service";
@@ -57,6 +56,9 @@ export async function PATCH(request: Request, { params }: Context) {
   if (input.memberAssignments && !await validateAssignments(input.memberAssignments)) return badRequest("Salah satu anggota project tidak ditemukan");
   const existingMembers = input.memberAssignments ? await getProjectMembers(id) : [];
   const { expectedVersion, memberAssignments, ...projectInput } = input;
+  const normalizedAssignments = memberAssignments
+    ? normalizeAssignments(memberAssignments, session.user.id, primaryPic?.id ?? current.primaryPicUserId)
+    : undefined;
   const update = {
     ...projectInput,
     ...(primaryPic ? { pic: primaryPic.name, picInitials: initials(primaryPic.name), primaryPicUserId: primaryPic.id } : {}),
@@ -68,7 +70,7 @@ export async function PATCH(request: Request, { params }: Context) {
     userId: session.user.id,
     name: session.user.name,
     initials: initials(session.user.name),
-  }, expectedVersion);
+  }, expectedVersion, normalizedAssignments);
   if (result.kind === "not-found") return notFound("Project");
   if (result.kind === "conflict") {
     const members = await getProjectMembers(id);
@@ -79,11 +81,9 @@ export async function PATCH(request: Request, { params }: Context) {
     }, { status: 409 });
   }
   const project = result.project;
-  if (memberAssignments) {
-    const normalized = normalizeAssignments(memberAssignments, session.user.id, primaryPic?.id ?? current.primaryPicUserId);
-    await syncProjectMembers(id, normalized, session.user.id);
+  if (normalizedAssignments) {
     const existingIds = new Set(existingMembers.map((member) => member.userId));
-    await notifyProjectAssignments(project, session.user.id, session.user.name, normalized.filter((member) => !existingIds.has(member.userId)).map((member) => member.userId));
+    await notifyProjectAssignments(project, session.user.id, session.user.name, normalizedAssignments.filter((member) => !existingIds.has(member.userId)).map((member) => member.userId));
     const members = await getProjectMembers(id);
     return Response.json({ data: { ...project, members } });
   }

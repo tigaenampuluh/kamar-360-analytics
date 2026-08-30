@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, gte, lte, ne } from "drizzle-orm";
+import { and, gte, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { agendas, notifications, projects, user } from "@/db/schema";
 
@@ -7,6 +7,20 @@ type NotificationTarget = typeof notifications.targetView.enumValues[number];
 type NotificationKind = typeof notifications.kind.enumValues[number];
 type ProjectRecord = typeof projects.$inferSelect;
 type AgendaRecord = typeof agendas.$inferSelect;
+
+const notificationDateFormatter = new Intl.DateTimeFormat("id-ID", {
+  timeZone: "Asia/Jakarta",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+function readableWibDate(value: Date) {
+  return `${notificationDateFormatter.format(value).replaceAll(".", ":")} WIB`;
+}
 
 type WorkspaceNotification = {
   actorUserId: string;
@@ -142,7 +156,7 @@ export async function ensureUpcomingNotifications(userId: string, now = new Date
       projectId: project.id,
       kind: "deadline" as const,
       title: "Deadline project mendekat",
-      message: `${project.title} dijadwalkan selesai pada ${project.deadline.toISOString()}.`,
+      message: `${project.title} dijadwalkan selesai pada ${readableWibDate(project.deadline)}.`,
       targetView: "tracker" as const,
       dedupeKey: `deadline:${project.id}:${project.deadline.toISOString()}`,
     })),
@@ -152,15 +166,20 @@ export async function ensureUpcomingNotifications(userId: string, now = new Date
       agendaId: agenda.id,
       kind: "agenda" as const,
       title: "Agenda segera dimulai",
-      message: `${agenda.title} dijadwalkan pada ${agenda.startTime.toISOString()}.`,
+      message: `${agenda.title} dijadwalkan pada ${readableWibDate(agenda.startTime)}.`,
       targetView: "calendar" as const,
       dedupeKey: `agenda:${agenda.id}:${agenda.startTime.toISOString()}`,
     })),
   ];
 
   if (values.length > 0) {
-    await db.insert(notifications).values(values).onConflictDoNothing({
+    await db.insert(notifications).values(values).onConflictDoUpdate({
       target: [notifications.userId, notifications.dedupeKey],
+      set: {
+        title: sql`excluded.title`,
+        message: sql`excluded.message`,
+        targetView: sql`excluded.target_view`,
+      },
     });
   }
 }

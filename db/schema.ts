@@ -10,6 +10,7 @@ export const user = pgTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
+  username: text("username").unique(),
   emailVerified: boolean("email_verified").default(false).notNull(),
   image: text("image"),
   createdAt: createdAt(),
@@ -191,12 +192,29 @@ export const activityLogs = pgTable("activity_logs", {
   index("idx_activity_logs_user_id").on(table.userId),
 ]);
 
+export const announcements = pgTable("announcements", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  priority: text("priority", { enum: ["info", "important", "urgent"] }).notNull().default("info"),
+  startsAt: timestamp("starts_at", { withTimezone: true }).defaultNow().notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }),
+  active: boolean("active").default(true).notNull(),
+  createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (table) => [
+  index("idx_announcements_active_period").on(table.active, table.startsAt, table.endsAt),
+  index("idx_announcements_created_at").on(table.createdAt),
+]);
+
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),
   userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
   agendaId: integer("agenda_id").references(() => agendas.id, { onDelete: "cascade" }),
-  kind: text("kind", { enum: ["deadline", "project", "agenda", "activity", "assignment", "mention", "approval"] }).notNull(),
+  announcementId: integer("announcement_id").references(() => announcements.id, { onDelete: "cascade" }),
+  kind: text("kind", { enum: ["deadline", "project", "agenda", "activity", "assignment", "mention", "approval", "announcement"] }).notNull(),
   title: text("title").notNull(),
   message: text("message").notNull(),
   targetView: text("target_view", { enum: ["dashboard", "tracker", "calendar", "library", "activity", "profile"] }).notNull().default("dashboard"),
@@ -208,6 +226,38 @@ export const notifications = pgTable("notifications", {
   index("idx_notifications_user_read_created").on(table.userId, table.readAt, table.createdAt),
   index("idx_notifications_project_id").on(table.projectId),
   index("idx_notifications_agenda_id").on(table.agendaId),
+  index("idx_notifications_announcement_id").on(table.announcementId),
+]);
+
+export type ProjectVersionSnapshot = {
+  title: string;
+  description: string;
+  pic: string;
+  picInitials: string;
+  primaryPicUserId: string | null;
+  deadline: string;
+  doneAt: string | null;
+  status: "On Going" | "Delay" | "Pending" | "Revisi" | "Done";
+  priority: "High" | "Medium" | "Low";
+  category: string;
+  workingDocLink: string | null;
+  archivedAt: string | null;
+  members: Array<{ userId: string; role: "Lead" | "Anggota" | "Viewer" }>;
+};
+
+export const projectVersions = pgTable("project_versions", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  version: integer("version").notNull(),
+  snapshot: jsonb("snapshot").$type<ProjectVersionSnapshot>().notNull(),
+  changes: jsonb("changes").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  action: text("action", { enum: ["create", "update", "archive", "restore"] }).notNull().default("update"),
+  createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+  createdByName: text("created_by_name").notNull(),
+  createdAt: createdAt(),
+}, (table) => [
+  uniqueIndex("idx_project_versions_project_version").on(table.projectId, table.version),
+  index("idx_project_versions_project_created").on(table.projectId, table.createdAt),
 ]);
 
 export const signupInvites = pgTable("signup_invites", {
@@ -256,6 +306,8 @@ export const userRelations = relations(user, ({ many }) => ({
   projectMemberships: many(projectMemberships, { relationName: "projectMember" }),
   projectComments: many(projectComments),
   projectMentions: many(projectCommentMentions),
+  announcements: many(announcements),
+  projectVersions: many(projectVersions),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -275,6 +327,7 @@ export const projectRelations = relations(projects, ({ one, many }) => ({
   assets: many(assets),
   activities: many(activityLogs),
   notifications: many(notifications),
+  versions: many(projectVersions),
 }));
 
 export const projectMembershipRelations = relations(projectMemberships, ({ one }) => ({
@@ -317,6 +370,17 @@ export const notificationRelations = relations(notifications, ({ one }) => ({
   user: one(user, { fields: [notifications.userId], references: [user.id] }),
   project: one(projects, { fields: [notifications.projectId], references: [projects.id] }),
   agenda: one(agendas, { fields: [notifications.agendaId], references: [agendas.id] }),
+  announcement: one(announcements, { fields: [notifications.announcementId], references: [announcements.id] }),
+}));
+
+export const announcementRelations = relations(announcements, ({ one, many }) => ({
+  author: one(user, { fields: [announcements.createdBy], references: [user.id] }),
+  notifications: many(notifications),
+}));
+
+export const projectVersionRelations = relations(projectVersions, ({ one }) => ({
+  project: one(projects, { fields: [projectVersions.projectId], references: [projects.id] }),
+  author: one(user, { fields: [projectVersions.createdBy], references: [user.id] }),
 }));
 
 export const authSchema = { user, session, account, verification, rateLimit };

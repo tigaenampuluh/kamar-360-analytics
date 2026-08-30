@@ -2,6 +2,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   activityLogs,
+  announcements,
   agendas,
   assets,
   notifications,
@@ -9,6 +10,7 @@ import {
   projectComments,
   projectCompletionApprovals,
   projectMemberships,
+  projectVersions,
   projects,
   user,
   workspaceBackups,
@@ -34,6 +36,8 @@ type WorkspaceSnapshot = {
   agendas: Array<Jsonify<typeof agendas.$inferSelect>>;
   assets: Array<Jsonify<typeof assets.$inferSelect>>;
   activityLogs: Array<Jsonify<typeof activityLogs.$inferSelect>>;
+  announcements?: Array<Jsonify<typeof announcements.$inferSelect>>;
+  projectVersions?: Array<Jsonify<typeof projectVersions.$inferSelect>>;
 };
 
 export type WorkspaceBackupEnvelope = {
@@ -55,7 +59,7 @@ function requiredDate(value: string) {
 }
 
 async function readSnapshot(executor: QueryExecutor): Promise<WorkspaceSnapshot> {
-  const [projectRows, membershipRows, commentRows, mentionRows, approvalRows, agendaRows, assetRows, activityRows] = await Promise.all([
+  const [projectRows, membershipRows, commentRows, mentionRows, approvalRows, agendaRows, assetRows, activityRows, announcementRows, versionRows] = await Promise.all([
     executor.select().from(projects),
     executor.select().from(projectMemberships),
     executor.select().from(projectComments),
@@ -64,6 +68,8 @@ async function readSnapshot(executor: QueryExecutor): Promise<WorkspaceSnapshot>
     executor.select().from(agendas),
     executor.select().from(assets),
     executor.select().from(activityLogs),
+    executor.select().from(announcements),
+    executor.select().from(projectVersions),
   ]);
   return JSON.parse(JSON.stringify({
     projects: projectRows,
@@ -74,6 +80,8 @@ async function readSnapshot(executor: QueryExecutor): Promise<WorkspaceSnapshot>
     agendas: agendaRows,
     assets: assetRows,
     activityLogs: activityRows,
+    announcements: announcementRows,
+    projectVersions: versionRows,
   })) as WorkspaceSnapshot;
 }
 
@@ -86,6 +94,8 @@ function summarize(snapshot: WorkspaceSnapshot) {
     agendas: snapshot.agendas.length,
     assets: snapshot.assets.length,
     activities: snapshot.activityLogs.length,
+    announcements: snapshot.announcements?.length ?? 0,
+    versions: snapshot.projectVersions?.length ?? 0,
   };
 }
 
@@ -181,6 +191,7 @@ export async function restoreWorkspaceBackup(id: number, actor: BackupActor) {
     }).returning({ id: workspaceBackups.id });
 
     await transaction.delete(notifications);
+    await transaction.delete(announcements);
     await transaction.delete(projectCommentMentions);
     await transaction.delete(projectComments);
     await transaction.delete(projectCompletionApprovals);
@@ -203,6 +214,11 @@ export async function restoreWorkspaceBackup(id: number, actor: BackupActor) {
     if (snapshot.projectMemberships.length) await transaction.insert(projectMemberships).values(snapshot.projectMemberships.map((row) => ({
       ...row,
       addedBy: row.addedBy && existingUserIds.has(row.addedBy) ? row.addedBy : null,
+      createdAt: requiredDate(row.createdAt),
+    })));
+    if (snapshot.projectVersions?.length) await transaction.insert(projectVersions).values(snapshot.projectVersions.map((row) => ({
+      ...row,
+      createdBy: row.createdBy && existingUserIds.has(row.createdBy) ? row.createdBy : null,
       createdAt: requiredDate(row.createdAt),
     })));
     if (snapshot.projectComments.length) await transaction.insert(projectComments).values(snapshot.projectComments.map((row) => ({
@@ -238,6 +254,14 @@ export async function restoreWorkspaceBackup(id: number, actor: BackupActor) {
       userId: row.userId && existingUserIds.has(row.userId) ? row.userId : null,
       createdAt: requiredDate(row.createdAt),
     })));
+    if (snapshot.announcements?.length) await transaction.insert(announcements).values(snapshot.announcements.map((row) => ({
+      ...row,
+      createdBy: row.createdBy && existingUserIds.has(row.createdBy) ? row.createdBy : null,
+      startsAt: requiredDate(row.startsAt),
+      endsAt: date(row.endsAt),
+      createdAt: requiredDate(row.createdAt),
+      updatedAt: requiredDate(row.updatedAt),
+    })));
 
     await transaction.execute(sql`select setval(pg_get_serial_sequence('projects', 'id'), coalesce((select max(id) from projects), 1), exists(select 1 from projects))`);
     await transaction.execute(sql`select setval(pg_get_serial_sequence('project_comments', 'id'), coalesce((select max(id) from project_comments), 1), exists(select 1 from project_comments))`);
@@ -245,6 +269,8 @@ export async function restoreWorkspaceBackup(id: number, actor: BackupActor) {
     await transaction.execute(sql`select setval(pg_get_serial_sequence('agendas', 'id'), coalesce((select max(id) from agendas), 1), exists(select 1 from agendas))`);
     await transaction.execute(sql`select setval(pg_get_serial_sequence('assets', 'id'), coalesce((select max(id) from assets), 1), exists(select 1 from assets))`);
     await transaction.execute(sql`select setval(pg_get_serial_sequence('activity_logs', 'id'), coalesce((select max(id) from activity_logs), 1), exists(select 1 from activity_logs))`);
+    await transaction.execute(sql`select setval(pg_get_serial_sequence('announcements', 'id'), coalesce((select max(id) from announcements), 1), exists(select 1 from announcements))`);
+    await transaction.execute(sql`select setval(pg_get_serial_sequence('project_versions', 'id'), coalesce((select max(id) from project_versions), 1), exists(select 1 from project_versions))`);
 
     await transaction.insert(activityLogs).values({
       userId: actor.id,

@@ -2,6 +2,21 @@
 
 All notable production changes to 360 - Center of Research are documented here.
 
+## [0.5.0] - 2026-08-30
+
+### Added
+
+- Admin announcements with priority, optional end time, activation controls, Dashboard banners, and recipient/read counts.
+- Two notification categories in one bell: Pengumuman Admin and Task Update.
+- Project Version History for Admin/Lead, with field and membership snapshots, up to 100 retained versions, and non-destructive restore.
+- Username-based login, automatic usernames for existing members, editable usernames in profiles, and username-based `@mention` labels.
+- Licensed credit on the login screen, sidebar, and workspace footer.
+
+### Changed
+
+- Deadline and agenda notifications now use readable Indonesian dates and WIB times instead of raw ISO timestamps such as `T10:00:00.000Z`.
+- Workspace backups also preserve announcements and project version snapshots.
+
 ## [0.4.0] - 2026-08-29
 
 ### Added
@@ -70,6 +85,7 @@ First formally versioned production baseline.
 - Project data and dashboard counts now stay synchronized across the main workspace views.
 - Login sessions end when the browser closes or after 10 minutes without activity.
 
+[0.5.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.5.0
 [0.4.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.4.0
 [0.3.1]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.3.1
 [0.3.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.3.0

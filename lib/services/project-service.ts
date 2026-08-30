@@ -1,9 +1,10 @@
 import { and, asc, eq, gte, ilike, isNotNull, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
-import { activityLogs, assets, projectMemberships, projects } from "@/db/schema";
+import { activityLogs, assets, projectMemberships, projects, projectVersions } from "@/db/schema";
 import type { NewProjectRecord, ProjectChanges, ProjectFilters } from "@/lib/models/project";
 import { getMembersForProjects, normalizeAssignments, type ProjectAssignment } from "@/lib/services/project-collaboration-service";
 import { notifyProjectAssignments, notifyProjectCreated, notifyProjectUpdated } from "@/lib/services/notification-service";
+import { buildProjectVersionSnapshot, describeProjectVersionChanges, trimProjectVersionHistory } from "@/lib/services/project-version-service";
 
 export async function listProjects(filters: ProjectFilters = {}) {
   const conditions: SQL[] = [];
@@ -78,6 +79,16 @@ export async function createProjectWithActivity(values: NewProjectRecord, actor:
       role: assignment.role,
       addedBy: actor.userId,
     })));
+    const snapshot = buildProjectVersionSnapshot(project, normalizedAssignments);
+    await transaction.insert(projectVersions).values({
+      projectId: project.id,
+      version: project.version,
+      snapshot,
+      changes: describeProjectVersionChanges(null, snapshot),
+      action: "create",
+      createdBy: actor.userId,
+      createdByName: actor.name,
+    });
     return project;
   });
   await Promise.all([
@@ -85,18 +96,24 @@ export async function createProjectWithActivity(values: NewProjectRecord, actor:
     notifyProjectAssignments(project, actor.userId, actor.name, normalizedAssignments.map((assignment) => assignment.userId)),
   ]);
   const members = await getMembersForProjects([project.id]);
+  await trimProjectVersionHistory(project.id);
   return { ...project, members: members.get(project.id) ?? [] };
 }
 
-export async function updateProjectWithActivity(id: number, changes: ProjectChanges, actor: ActivityActor, expectedVersion?: number) {
+export async function updateProjectWithActivity(id: number, changes: ProjectChanges, actor: ActivityActor, expectedVersion?: number, membershipAssignments?: ProjectAssignment[], historyAction: "update" | "restore" = "update") {
   const result = await db.transaction(async (transaction) => {
     const [current] = await transaction.select().from(projects).where(eq(projects.id, id)).limit(1);
     if (!current) return { kind: "not-found" as const };
     if (expectedVersion !== undefined && expectedVersion !== current.version) {
       return { kind: "conflict" as const, current };
     }
+    const previousAssignments = await transaction.select({ userId: projectMemberships.userId, role: projectMemberships.role })
+      .from(projectMemberships)
+      .where(eq(projectMemberships.projectId, id));
 
-    const doneAtChange = changes.status === "Done" && current.status !== "Done"
+    const doneAtChange = historyAction === "restore"
+      ? undefined
+      : changes.status === "Done" && current.status !== "Done"
       ? new Date()
       : changes.status !== undefined && changes.status !== "Done" && current.status === "Done"
         ? null
@@ -112,14 +129,39 @@ export async function updateProjectWithActivity(id: number, changes: ProjectChan
       return latest ? { kind: "conflict" as const, current: latest } : { kind: "not-found" as const };
     }
 
+    const nextAssignments = membershipAssignments ?? previousAssignments;
+    if (membershipAssignments) {
+      await transaction.delete(projectMemberships).where(eq(projectMemberships.projectId, id));
+      if (membershipAssignments.length > 0) {
+        await transaction.insert(projectMemberships).values(membershipAssignments.map((assignment) => ({
+          projectId: id,
+          userId: assignment.userId,
+          role: assignment.role,
+          addedBy: actor.userId,
+        })));
+      }
+    }
+
+    const previousSnapshot = buildProjectVersionSnapshot(current, previousAssignments);
+    const snapshot = buildProjectVersionSnapshot(project, nextAssignments);
+    await transaction.insert(projectVersions).values({
+      projectId: id,
+      version: project.version,
+      snapshot,
+      changes: describeProjectVersionChanges(previousSnapshot, snapshot),
+      action: historyAction,
+      createdBy: actor.userId,
+      createdByName: actor.name,
+    });
+
     const statusChanged = changes.status !== undefined && changes.status !== current.status;
     await transaction.insert(activityLogs).values({
       userId: actor.userId,
       actorName: actor.name,
       actorInitials: actor.initials,
       projectId: id,
-      action: statusChanged ? "memindahkan project" : "memperbarui project",
-      details: statusChanged ? `${current.status} → ${changes.status}` : project.title,
+      action: historyAction === "restore" ? "memulihkan versi project" : statusChanged ? "memindahkan project" : "memperbarui project",
+      details: historyAction === "restore" ? `Versi ${project.version}` : statusChanged ? `${current.status} → ${changes.status}` : project.title,
     });
 
     if (changes.status === "Done" && current.status !== "Done") {
@@ -142,11 +184,14 @@ export async function updateProjectWithActivity(id: number, changes: ProjectChan
     return {
       kind: "updated" as const,
       project,
-      notificationDetail: statusChanged ? `status ${current.status} menjadi ${changes.status}` : "informasi project diperbarui",
+      notificationDetail: historyAction === "restore" ? `memulihkan riwayat sebagai versi ${project.version}` : statusChanged ? `status ${current.status} menjadi ${changes.status}` : "informasi project diperbarui",
     };
   });
   if (result.kind !== "updated") return result;
-  await notifyProjectUpdated(result.project, actor.userId, actor.name, result.notificationDetail);
+  await Promise.all([
+    notifyProjectUpdated(result.project, actor.userId, actor.name, result.notificationDetail),
+    trimProjectVersionHistory(id),
+  ]);
   return result;
 }
 

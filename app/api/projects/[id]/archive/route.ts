@@ -1,8 +1,9 @@
 import { db } from "@/db";
-import { activityLogs, projects } from "@/db/schema";
+import { activityLogs, projectMemberships, projects, projectVersions } from "@/db/schema";
 import { badRequest, forbidden, getApiSession, initials, notFound, unauthorized } from "@/lib/api";
 import { getProjectAccess } from "@/lib/services/project-collaboration-service";
 import { findProjectById } from "@/lib/services/project-service";
+import { buildProjectVersionSnapshot, describeProjectVersionChanges, trimProjectVersionHistory } from "@/lib/services/project-version-service";
 import { and, eq, sql } from "drizzle-orm";
 
 export const runtime = "nodejs";
@@ -20,6 +21,9 @@ async function changeArchiveState(request: Request, context: Context, archived: 
   const expectedVersion = Number(request.headers.get("if-match")?.replace(/^W\//, "").replaceAll('"', ""));
   if (!Number.isInteger(expectedVersion) || expectedVersion < 1) return badRequest("Versi project wajib dikirim untuk mencegah konflik data");
   const [updated] = await db.transaction(async (transaction) => {
+    const assignments = await transaction.select({ userId: projectMemberships.userId, role: projectMemberships.role })
+      .from(projectMemberships)
+      .where(eq(projectMemberships.projectId, id));
     const rows = await transaction.update(projects).set({
       archivedAt: archived ? new Date() : null,
       archivedBy: archived ? session.user.id : null,
@@ -35,6 +39,17 @@ async function changeArchiveState(request: Request, context: Context, archived: 
       action: archived ? "mengarsipkan project" : "memulihkan project",
       details: project.title,
     });
+    const previousSnapshot = buildProjectVersionSnapshot(project, assignments);
+    const snapshot = buildProjectVersionSnapshot(rows[0], assignments);
+    await transaction.insert(projectVersions).values({
+      projectId: id,
+      version: rows[0].version,
+      snapshot,
+      changes: describeProjectVersionChanges(previousSnapshot, snapshot),
+      action: "archive",
+      createdBy: session.user.id,
+      createdByName: session.user.name,
+    });
     return rows;
   });
   if (!updated) {
@@ -42,6 +57,7 @@ async function changeArchiveState(request: Request, context: Context, archived: 
     if (!latest) return notFound("Project");
     return Response.json({ error: "Project sudah diubah oleh pengguna lain. Status arsip tidak diubah.", code: "PROJECT_CONFLICT", data: latest }, { status: 409 });
   }
+  await trimProjectVersionHistory(id);
   return Response.json({ data: updated });
 }
 

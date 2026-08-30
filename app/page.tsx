@@ -30,6 +30,7 @@ import {
   LoaderCircle,
   LogIn,
   MailPlus,
+  Megaphone,
   Menu,
   MessageSquare,
   MoreHorizontal,
@@ -52,6 +53,9 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
 import packageInfo from "@/package.json";
+import { AnnouncementBanner } from "@/components/announcement-banner";
+import { AnnouncementManager } from "@/components/announcement-manager";
+import { ProjectVersionHistory } from "@/components/project-version-history";
 
 type View = "dashboard" | "tracker" | "calendar" | "library" | "activity" | "admin" | "profile";
 type Status = "On Going" | "Delay" | "Pending" | "Revisi" | "Done";
@@ -280,6 +284,7 @@ type WorkspaceMemberOption = {
   id: string;
   name: string;
   email: string;
+  username: string | null;
   image: string | null;
   workspaceRole: "Admin" | "Anggota";
 };
@@ -288,6 +293,7 @@ type ProjectMember = {
   userId: string;
   name: string;
   email: string;
+  username?: string | null;
   image: string | null;
   role: ProjectMemberRole;
 };
@@ -533,6 +539,7 @@ function Sidebar({ active, onChange, open, onClose, profile, projectCount, isAdm
             <MoreHorizontal size={17} className="text-[#91a4b0]" />
           </button>
           <button onClick={onLogout} className="mt-1 w-full rounded-md px-3 py-2 text-left text-xs text-[#91a4b0] hover:bg-white/[.06] hover:text-white">Keluar dari workspace</button>
+          <div className="mt-3 border-t border-white/10 px-2 pt-3 text-[9px] leading-4 text-[#7790a0]">v{APP_VERSION}<br />© 2026 360 – Center of Research<br />Made by Angga Santa Gideon</div>
         </div>
       </aside>
     </>
@@ -545,7 +552,7 @@ type NotificationAlert = {
   description: string;
   time: string;
   view: View;
-  kind: "deadline" | "project" | "agenda" | "activity" | "assignment" | "mention" | "approval";
+  kind: "deadline" | "project" | "agenda" | "activity" | "assignment" | "mention" | "approval" | "announcement";
   read: boolean;
 };
 
@@ -573,6 +580,7 @@ const notificationAppearance = {
   assignment: { icon: UserPlus, tone: "bg-[#e8efe9] text-[#3f7650]" },
   mention: { icon: Users, tone: "bg-[#eee8f7] text-[#73539a]" },
   approval: { icon: Check, tone: "bg-[#f7efd9] text-[#a87318]" },
+  announcement: { icon: Megaphone, tone: "bg-[#fff1ea] text-[#c85a2b]" },
 } satisfies Record<NotificationAlert["kind"], { icon: typeof Bell; tone: string }>;
 
 function notificationTime(value: string) {
@@ -616,6 +624,7 @@ function Header({ active, onMenu, profile, onProfile, onNavigate, backendEnabled
   const [alerts, setAlerts] = useState<NotificationAlert[]>(notificationAlerts);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationError, setNotificationError] = useState("");
+  const [notificationTab, setNotificationTab] = useState<"announcement" | "task">("task");
   const [searchOpen, setSearchOpen] = useState(false);
   const [globalQuery, setGlobalQuery] = useState("");
   const [searchResults, setSearchResults] = useState<GlobalSearchResult[]>([]);
@@ -623,6 +632,9 @@ function Header({ active, onMenu, profile, onProfile, onNavigate, backendEnabled
   const notificationRef = useRef<HTMLDivElement>(null);
   const title = active === "profile" ? "Profil" : navItems.find((n) => n.id === active)?.label ?? "Dashboard";
   const unreadCount = alerts.filter((alert) => !alert.read).length;
+  const announcementUnreadCount = alerts.filter((alert) => alert.kind === "announcement" && !alert.read).length;
+  const taskUnreadCount = alerts.filter((alert) => alert.kind !== "announcement" && !alert.read).length;
+  const visibleAlerts = alerts.filter((alert) => notificationTab === "announcement" ? alert.kind === "announcement" : alert.kind !== "announcement");
 
   const loadNotifications = useCallback(async (signal?: AbortSignal) => {
     if (!backendEnabled) return;
@@ -733,11 +745,12 @@ function Header({ active, onMenu, profile, onProfile, onNavigate, backendEnabled
           </button>
           {notificationsOpen && <div role="dialog" aria-label="Daftar notifikasi" className="absolute right-0 top-12 z-50 w-[min(360px,calc(100vw-2rem))] overflow-hidden border border-[#ddd9d0] bg-white shadow-[0_18px_50px_rgba(24,48,68,.18)]">
             <div className="flex items-center justify-between border-b border-[#ebe8df] px-4 py-3"><div><h2 className="font-serif text-lg font-semibold text-[#183044]">Notifikasi</h2><p className="mt-0.5 text-[11px] text-[#879095]">{notificationsLoading && alerts.length === 0 ? "Memuat..." : unreadCount ? `${unreadCount} belum dibaca` : "Semua sudah dibaca"}</p></div>{unreadCount > 0 && <button onClick={() => void markAllRead()} className="text-[11px] font-bold text-[#e76f36] hover:underline">Tandai semua dibaca</button>}</div>
+            <div className="grid grid-cols-2 border-b border-[#ebe8df] bg-[#faf9f5] p-1.5 text-[11px] font-bold"><button onClick={() => setNotificationTab("announcement")} className={cn("rounded px-2 py-2", notificationTab === "announcement" ? "bg-white text-[#183044] shadow-sm" : "text-[#788186]")}>Pengumuman Admin{announcementUnreadCount > 0 && <span className="ml-1.5 rounded-full bg-[#e76f36] px-1.5 py-0.5 text-[9px] text-white">{announcementUnreadCount}</span>}</button><button onClick={() => setNotificationTab("task")} className={cn("rounded px-2 py-2", notificationTab === "task" ? "bg-white text-[#183044] shadow-sm" : "text-[#788186]")}>Task Update{taskUnreadCount > 0 && <span className="ml-1.5 rounded-full bg-[#3578a8] px-1.5 py-0.5 text-[9px] text-white">{taskUnreadCount}</span>}</button></div>
             {notificationError && <div className="border-b border-[#f2d5cd] bg-[#fff6f2] px-4 py-2 text-[11px] text-[#a64d34]">{notificationError} <button onClick={() => void loadNotifications()} className="font-bold underline">Coba lagi</button></div>}
             <div className="divide-y divide-[#eeeae2]">
               {notificationsLoading && alerts.length === 0 && <div className="grid place-items-center py-10 text-[#e76f36]"><LoaderCircle className="animate-spin" size={22} /></div>}
-              {!notificationsLoading && alerts.length === 0 && <div className="px-6 py-10 text-center"><Bell className="mx-auto text-[#b3b7b8]" size={24} /><p className="mt-3 text-sm font-semibold text-[#53626b]">Belum ada notifikasi</p><p className="mt-1 text-xs text-[#8a9194]">Update project dan agenda akan muncul di sini.</p></div>}
-              {alerts.map((alert) => { const appearance = notificationAppearance[alert.kind]; const Icon = appearance.icon; return <button key={alert.id} onClick={() => void openAlert(alert)} className={cn("flex w-full gap-3 px-4 py-3.5 text-left transition hover:bg-[#f7f5ef]", !alert.read && "bg-[#fffaf5]")}><span className={cn("mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full", appearance.tone)}><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="flex items-start gap-2"><span className="flex-1 text-sm font-semibold text-[#183044]">{alert.title}</span>{!alert.read && <i className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#e76f36]" />}</span><span className="mt-1 block text-xs leading-5 text-[#687378]">{alert.description}</span><span className="mt-1 block text-[10px] text-[#9a9fa2]">{alert.time}</span></span></button>; })}
+              {!notificationsLoading && visibleAlerts.length === 0 && <div className="px-6 py-10 text-center"><Bell className="mx-auto text-[#b3b7b8]" size={24} /><p className="mt-3 text-sm font-semibold text-[#53626b]">Belum ada {notificationTab === "announcement" ? "pengumuman" : "task update"}</p><p className="mt-1 text-xs text-[#8a9194]">{notificationTab === "announcement" ? "Pengumuman dari Admin akan muncul di sini." : "Update project dan agenda akan muncul di sini."}</p></div>}
+              {visibleAlerts.map((alert) => { const appearance = notificationAppearance[alert.kind]; const Icon = appearance.icon; return <button key={alert.id} onClick={() => void openAlert(alert)} className={cn("flex w-full gap-3 px-4 py-3.5 text-left transition hover:bg-[#f7f5ef]", !alert.read && "bg-[#fffaf5]")}><span className={cn("mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full", appearance.tone)}><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="flex items-start gap-2"><span className="flex-1 text-sm font-semibold text-[#183044]">{alert.title}</span>{!alert.read && <i className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#e76f36]" />}</span><span className="mt-1 block text-xs leading-5 text-[#687378]">{alert.description}</span><span className="mt-1 block text-[10px] text-[#9a9fa2]">{alert.time}</span></span></button>; })}
             </div>
             <button onClick={() => { setNotificationsOpen(false); onNavigate("activity"); }} className="w-full border-t border-[#ebe8df] px-4 py-3 text-center text-xs font-bold text-[#e76f36] hover:bg-[#faf8f3]">Buka Activity History</button>
           </div>}
@@ -911,6 +924,8 @@ function Dashboard({ projects, goTo, backendEnabled }: { projects: Project[]; go
     <div className="fade-up">
       <SectionHeading eyebrow={dateLabel} title={`${greeting}! Selamat datang di 360 - Center of Research.`} description={attention.length > 0 ? `Ada ${attention.length} project yang perlu ditindaklanjuti.` : total > 0 ? "Semua project sedang berjalan tanpa tanda delay atau revisi." : "Belum ada project. Tambahkan project pertama untuk memulai."} action={<Button onClick={() => goTo("tracker")}><Plus size={17} /> Tambah project</Button>} />
 
+      <AnnouncementBanner enabled={backendEnabled} />
+
       <div className="grid gap-px overflow-hidden border border-[#ddd9d0] bg-[#ddd9d0] sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <StatCard label="Total project" value={String(total)} change={total > 0 ? "Data aktual" : "Belum ada project"} icon={FolderOpen} accent="#3578a8" />
         <StatCard label="On Going" value={String(counts["On Going"])} change={`${percentage(counts["On Going"])}% dari total`} icon={Activity} accent="#3578a8" />
@@ -953,7 +968,7 @@ function Dashboard({ projects, goTo, backendEnabled }: { projects: Project[]; go
 function projectMembersFromAssignments(workspaceMembers: WorkspaceMemberOption[], assignments: Record<string, ProjectMemberRole>) {
   return Object.entries(assignments).flatMap(([userId, role]) => {
     const member = workspaceMembers.find((candidate) => candidate.id === userId);
-    return member ? [{ userId, name: member.name, email: member.email, image: member.image, role }] : [];
+    return member ? [{ userId, name: member.name, email: member.email, username: member.username, image: member.image, role }] : [];
   });
 }
 
@@ -1132,8 +1147,9 @@ function ProjectDetail({ project, open, backendEnabled, fallbackPermissions, onO
     <div className="grid grid-cols-2 gap-4 border-y border-[#e5e2da] py-4"><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">PIC</div><div className="mt-2 flex items-center gap-2 text-sm font-semibold"><MiniAvatar initials={project.initials} />{project.pic}</div></div><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Deadline</div><div className="mt-3 flex items-center gap-2 text-sm font-semibold"><CalendarDays size={15} className="text-[#e76f36]" />{project.deadline}</div></div></div>
     <div className="space-y-4 py-4"><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Catatan project</div><p className="mt-2 text-sm leading-6 text-[#59656c]">{project.note}</p></div><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Working document</div><div className="mt-2 flex items-center gap-2 text-xs text-[#68747a]"><Link2 size={14} className="text-[#e76f36]" /><span className="truncate">{project.workingDocLink || "Belum ditambahkan"}</span></div></div></div>
     <section className="border-t border-[#e5e2da] pt-4"><div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[#92989b]"><Users size={13} />Anggota project</div><div className="grid gap-2 sm:grid-cols-2">{detail.members.map((member) => <div key={member.userId} className="flex items-center gap-2 border border-[#e5e2da] bg-[#faf9f5] p-2.5"><MiniAvatar initials={memberInitials(member.name)} image={member.image} name={member.name} /><div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold">{member.name}</div><div className="truncate text-[10px] text-[#8a9194]">{member.email}</div></div><Badge className="bg-white text-[#50616b]">{member.role}</Badge></div>)}{detail.members.length === 0 && <div className="text-xs text-[#8a9194]">Belum ada akun anggota di project ini.</div>}</div></section>
-    <section className="border-t border-[#e5e2da] pt-4"><div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[#92989b]"><MessageSquare size={13} />Komentar & mention</div><div className="max-h-44 space-y-2 overflow-y-auto thin-scrollbar">{detail.comments.map((item) => <div key={item.id} className="flex gap-2 bg-[#faf9f5] p-3"><MiniAvatar initials={memberInitials(item.authorName)} image={item.authorImage} name={item.authorName} /><div><div className="text-xs font-bold">{item.authorName}<span className="ml-2 font-normal text-[#9a9fa1]">{new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt))}</span></div><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-[#59656c]">{item.body}</p></div></div>)}{detail.comments.length === 0 && <div className="py-3 text-center text-xs text-[#92989b]">Belum ada komentar.</div>}</div>{detail.permissions.canComment && !project.archivedAt && <div className="mt-3"><textarea value={comment} onChange={(event) => setComment(event.target.value)} className="min-h-20 w-full resize-none rounded-md border border-[#d9d7cf] bg-white p-3 text-sm outline-none focus:border-[#e76f36]" placeholder="Tulis komentar untuk tim…" /><div className="mt-2 flex flex-wrap gap-1">{detail.members.map((member) => { const active = mentionUserIds.includes(member.userId); return <button key={member.userId} type="button" onClick={() => { setMentionUserIds((current) => active ? current.filter((id) => id !== member.userId) : [...current, member.userId]); if (!active && !comment.includes(`@${member.name}`)) setComment((current) => `${current}${current ? " " : ""}@${member.name} `); }} className={cn("rounded-full border px-2 py-1 text-[10px]", active ? "border-[#e76f36] bg-[#fff1ea] text-[#bf5425]" : "border-[#dedbd3] text-[#68747a]")}>@{member.name.split(" ")[0]}</button>; })}<Button size="sm" className="ml-auto" onClick={() => void submitComment()} disabled={busy || !comment.trim()}><Send size={13} /> Kirim</Button></div></div>}</section>
+    <section className="border-t border-[#e5e2da] pt-4"><div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[#92989b]"><MessageSquare size={13} />Komentar & mention</div><div className="max-h-44 space-y-2 overflow-y-auto thin-scrollbar">{detail.comments.map((item) => <div key={item.id} className="flex gap-2 bg-[#faf9f5] p-3"><MiniAvatar initials={memberInitials(item.authorName)} image={item.authorImage} name={item.authorName} /><div><div className="text-xs font-bold">{item.authorName}<span className="ml-2 font-normal text-[#9a9fa1]">{new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt))}</span></div><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-[#59656c]">{item.body}</p></div></div>)}{detail.comments.length === 0 && <div className="py-3 text-center text-xs text-[#92989b]">Belum ada komentar.</div>}</div>{detail.permissions.canComment && !project.archivedAt && <div className="mt-3"><textarea value={comment} onChange={(event) => setComment(event.target.value)} className="min-h-20 w-full resize-none rounded-md border border-[#d9d7cf] bg-white p-3 text-sm outline-none focus:border-[#e76f36]" placeholder="Tulis komentar untuk tim…" /><div className="mt-2 flex flex-wrap gap-1">{detail.members.map((member) => { const active = mentionUserIds.includes(member.userId); const mention = member.username || member.name.split(" ")[0]; return <button key={member.userId} type="button" onClick={() => { setMentionUserIds((current) => active ? current.filter((id) => id !== member.userId) : [...current, member.userId]); if (!active && !comment.includes(`@${mention}`)) setComment((current) => `${current}${current ? " " : ""}@${mention} `); }} className={cn("rounded-full border px-2 py-1 text-[10px]", active ? "border-[#e76f36] bg-[#fff1ea] text-[#bf5425]" : "border-[#dedbd3] text-[#68747a]")}>@{mention}</button>; })}<Button size="sm" className="ml-auto" onClick={() => void submitComment()} disabled={busy || !comment.trim()}><Send size={13} /> Kirim</Button></div></div>}</section>
     {!project.archivedAt && project.status !== "Done" && detail.permissions.canRequestCompletion && <section className="border-t border-[#e5e2da] pt-4"><div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#92989b]">Approval penyelesaian</div>{approvalPending ? <div className="bg-[#fff7e6] p-3 text-xs text-[#7b5a1b]"><b>Menunggu review</b> · diajukan oleh {detail.approval?.requestedByName}{detail.permissions.canApproveCompletion && <div className="mt-3 flex gap-2"><Input value={approvalNote} onChange={(event) => setApprovalNote(event.target.value)} placeholder="Catatan review (opsional)" /><Button size="sm" onClick={() => void reviewApproval("approved")} disabled={busy}><Check size={14} /> Setujui</Button><Button size="sm" variant="outline" onClick={() => void reviewApproval("rejected")} disabled={busy}><X size={14} /> Tolak</Button></div>}</div> : !detail.permissions.canApproveCompletion ? <div className="flex gap-2"><Input value={approvalNote} onChange={(event) => setApprovalNote(event.target.value)} placeholder="Catatan penyelesaian (opsional)" /><Button onClick={() => void requestApproval()} disabled={busy}>Minta approval Done</Button></div> : <p className="text-xs text-[#7b8387]">Sebagai {detail.permissions.role}, Anda dapat memindahkan project langsung ke Done.</p>}</section>}
+    {backendEnabled && detail.permissions.canEdit && <ProjectVersionHistory projectId={project.id} currentVersion={project.version ?? 1} onRestored={async () => { const response = await fetch(`/api/projects/${project.id}`, { cache: "no-store" }); if (response.ok) { const payload = await response.json() as { data: ApiProject }; onProjectUpdated(fromApiProject(payload.data)); } }} />}
     {feedback && <div className="border-l-2 border-[#e76f36] bg-[#fff4ee] px-3 py-2 text-xs text-[#96502f]">{feedback}</div>}
     <div className="flex flex-col gap-2 border-t border-[#e5e2da] pt-4 sm:flex-row"><Button className="flex-1" disabled={!project.workingDocLink} onClick={() => project.workingDocLink && window.open(project.workingDocLink, "_blank", "noopener,noreferrer")}><FileText size={16} /> Buka working document</Button>{detail.permissions.canEdit && !project.archivedAt && <Button variant="outline" onClick={onEdit}><MoreHorizontal size={16} /> Edit</Button>}{detail.permissions.canEdit && <Button variant="outline" onClick={onArchive}><Archive size={16} />{project.archivedAt ? "Pulihkan" : "Arsipkan"}</Button>}{detail.permissions.canDelete && <Button variant="outline" className="border-[#e2b9b5] text-[#b9433d] hover:bg-[#f9e8e5]" onClick={onDelete}><Trash2 size={16} /> Hapus</Button>}</div></DialogContent></Dialog>;
 }
@@ -1237,11 +1253,11 @@ function ProjectTracker({ projects, setProjects, backendEnabled, profile, isAdmi
   useEffect(() => {
     if (!backendEnabled) {
       const names = Array.from(new Set([profile.name, ...projects.map((project) => project.pic)]));
-      setWorkspaceMembers(names.map((name, index) => ({ id: `demo-${index}`, name, email: index === 0 ? profile.email : `${name.toLowerCase().replace(/[^a-z0-9]+/g, ".")}@demo.local`, image: index === 0 ? profile.image : null, workspaceRole: index === 0 ? "Admin" : "Anggota" })));
+      setWorkspaceMembers(names.map((name, index) => ({ id: `demo-${index}`, name, email: index === 0 ? profile.email : `${name.toLowerCase().replace(/[^a-z0-9]+/g, ".")}@demo.local`, username: index === 0 ? profile.username : name.toLowerCase().replace(/[^a-z0-9]+/g, "."), image: index === 0 ? profile.image : null, workspaceRole: index === 0 ? "Admin" : "Anggota" })));
       return;
     }
     void fetch("/api/members", { cache: "no-store" }).then((response) => response.ok ? response.json() : Promise.reject()).then((payload: { data: WorkspaceMemberOption[] }) => setWorkspaceMembers(payload.data)).catch(() => setProjectError("Daftar anggota belum dapat dimuat."));
-  }, [backendEnabled, profile.email, profile.image, profile.name, projects]);
+  }, [backendEnabled, profile.email, profile.image, profile.name, profile.username, projects]);
   useEffect(() => {
     if (!showArchived || !backendEnabled) return;
     void fetch("/api/projects?archived=true", { cache: "no-store" })
@@ -1785,7 +1801,7 @@ function ActivityHistory({ isAdmin }: { isAdmin: boolean }) {
   </div>;
 }
 
-type ProfileData = { name: string; email: string; role: string; image: string | null };
+type ProfileData = { name: string; email: string; username: string | null; role: string; image: string | null };
 type ActiveSession = { id: string; token: string; createdAt: string | Date; updatedAt: string | Date; expiresAt: string | Date; ipAddress?: string | null; userAgent?: string | null };
 
 function ProfilePage({ profile, backendEnabled, onSave, onLogout }: { profile: ProfileData; backendEnabled: boolean; onSave: (profile: ProfileData) => void | Promise<void>; onLogout: () => void }) {
@@ -1836,14 +1852,14 @@ function ProfilePage({ profile, backendEnabled, onSave, onLogout }: { profile: P
     reader.readAsDataURL(file);
   };
   const save = async () => {
-    if (!draft.name.trim() || !draft.email.trim() || !draft.role.trim()) return;
+    if (!draft.name.trim() || !draft.email.trim() || !draft.username?.trim() || !draft.role.trim()) return;
     setSaving(true);
     setError("");
     try {
-      await onSave({ name: draft.name.trim(), email: draft.email.trim(), role: draft.role.trim(), image: draft.image });
+      await onSave({ name: draft.name.trim(), email: draft.email.trim(), username: draft.username.trim().toLowerCase(), role: draft.role.trim(), image: draft.image });
       setEditing(false);
-    } catch {
-      setError("Perubahan profil belum tersimpan. Silakan coba lagi.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Perubahan profil belum tersimpan. Silakan coba lagi.");
     } finally {
       setSaving(false);
     }
@@ -1890,7 +1906,7 @@ function ProfilePage({ profile, backendEnabled, onSave, onLogout }: { profile: P
         <div className="mt-8 max-w-2xl space-y-5">
           <div className="border border-[#e3e0d8] bg-[#faf9f5] p-4"><div className="flex flex-col gap-4 sm:flex-row sm:items-center"><Avatar className="h-16 w-16 shrink-0">{previewImage && <AvatarImage src={previewImage} alt="Preview foto profil" className="object-cover" />}<AvatarFallback className="bg-[#e76f36] font-serif text-xl text-white">{initials}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><div className="text-sm font-semibold text-[#183044]">Foto profil</div><p className="mt-1 text-xs leading-5 text-[#7b8387]">JPG, PNG, atau WebP. Ukuran maksimal 1 MB.</p><div className="mt-3 flex flex-wrap gap-2"><input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={selectPhoto} className="hidden" /><Button type="button" size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}><Camera size={15} />{previewImage ? "Ganti foto" : "Unggah foto"}</Button>{previewImage && <Button type="button" size="sm" variant="ghost" onClick={() => { setDraft((current) => ({ ...current, image: null })); setEditing(true); }}>Hapus foto</Button>}</div></div></div></div>
           {error && <div className="border-l-2 border-[#d8564e] bg-[#f9e8e5] px-3 py-2 text-xs text-[#a43d37]">{error}</div>}
-          <label className="block text-xs font-bold text-[#59656c]">Nama lengkap<Input className="mt-2 font-normal" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} disabled={!editing} /></label><label className="block text-xs font-bold text-[#59656c]">Email<Input type="email" className="mt-2 font-normal" value={draft.email} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} disabled={!editing} /></label><label className="block text-xs font-bold text-[#59656c]">Peran di tim<Input className="mt-2 font-normal" value={draft.role} onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))} disabled={!editing} /></label>{editing && <div className="flex justify-end gap-2 pt-3"><Button variant="ghost" onClick={() => { setDraft(profile); setError(""); setEditing(false); }} disabled={saving}>Batal</Button><Button onClick={() => { void save(); }} disabled={saving || !draft.name.trim() || !draft.email.trim() || !draft.role.trim()}>{saving ? <LoaderCircle size={16} className="animate-spin" /> : <Check size={16} />}{saving ? "Menyimpan..." : "Simpan profil"}</Button></div>}
+          <label className="block text-xs font-bold text-[#59656c]">Nama lengkap<Input className="mt-2 font-normal" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} disabled={!editing} /></label><label className="block text-xs font-bold text-[#59656c]">Username<Input className="mt-2 font-normal" value={draft.username || ""} onChange={(event) => setDraft((current) => ({ ...current, username: event.target.value.toLowerCase() }))} disabled={!editing} placeholder="contoh: angga.gideon" /></label><label className="block text-xs font-bold text-[#59656c]">Email<Input type="email" className="mt-2 font-normal" value={draft.email} disabled /></label><label className="block text-xs font-bold text-[#59656c]">Peran di tim<Input className="mt-2 font-normal" value={draft.role} onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))} disabled={!editing} /></label>{editing && <div className="flex justify-end gap-2 pt-3"><Button variant="ghost" onClick={() => { setDraft(profile); setError(""); setEditing(false); }} disabled={saving}>Batal</Button><Button onClick={() => { void save(); }} disabled={saving || !draft.name.trim() || !draft.username?.trim() || !draft.role.trim()}>{saving ? <LoaderCircle size={16} className="animate-spin" /> : <Check size={16} />}{saving ? "Menyimpan..." : "Simpan profil"}</Button></div>}
         </div>
       </section>
     </div>
@@ -2148,6 +2164,7 @@ function AdminMembersPage() {
         </div>}
       </section>
     </div>
+    <AnnouncementManager />
     <section className="mt-6 bg-white p-6 md:p-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#e76f36]"><KeyRound size={14} /> Pemulihan akun</div><h2 className="mt-2 font-serif text-2xl font-semibold">Permintaan reset password</h2><p className="mt-1 text-sm text-[#747d81]">Tetapkan password sementara, lalu sampaikan langsung kepada anggota melalui kanal internal yang aman.</p></div><Button variant="outline" size="sm" onClick={() => void loadPasswordResets()} disabled={resetLoading}>Muat ulang</Button></div>
       <div className="mt-6 divide-y divide-[#ebe8df] border-y border-[#ebe8df]">
@@ -2196,6 +2213,7 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -2212,17 +2230,21 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
     event.preventDefault();
     setError("");
     setNotice("");
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) { setError("Masukkan alamat email yang valid."); return; }
+    const identifier = email.trim().toLowerCase();
+    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+    const normalizedUsername = username.trim().toLowerCase();
+    if (mode !== "login" && !emailValid) { setError("Masukkan alamat email yang valid."); return; }
+    if (mode === "login" && !emailValid && !/^[a-z0-9._]{3,30}$/.test(identifier)) { setError("Masukkan email atau username yang valid."); return; }
     if (mode !== "forgot" && password.length < 8) { setError("Password harus terdiri dari minimal 8 karakter."); return; }
     if (mode === "register" && name.trim().length < 2) { setError("Nama lengkap harus terdiri dari minimal 2 karakter."); return; }
+    if (mode === "register" && !/^[a-z0-9._]{3,30}$/.test(normalizedUsername)) { setError("Username harus 3–30 karakter dan hanya memakai huruf, angka, titik, atau underscore."); return; }
     setLoading(true);
     try {
       if (mode === "forgot") {
         const response = await fetch("/api/password-recovery", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: normalizedEmail }),
+          body: JSON.stringify({ email: identifier }),
         });
         const result = await response.json() as { message?: string; error?: string };
         if (!response.ok) throw new Error(result.error || "Permintaan belum dapat dikirim.");
@@ -2230,13 +2252,15 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
         return;
       }
       if (mode === "login") {
-        const result = await authClient.signIn.email({ email: normalizedEmail, password, rememberMe: false });
-        if (result.error) throw new Error(result.error.message || "Autentikasi gagal. Periksa data Anda.");
+        const result = emailValid
+          ? await authClient.signIn.email({ email: identifier, password, rememberMe: false })
+          : await authClient.signIn.username({ username: identifier, password });
+        if (result.error) throw new Error("Email/username atau password tidak sesuai.");
       } else {
-        const registration = await authClient.signUp.email({ email: normalizedEmail, password, name: name.trim() });
+        const registration = await authClient.signUp.email({ email: identifier, password, name: name.trim(), username: normalizedUsername });
         if (registration.error) throw new Error(registration.error.message || "Pendaftaran gagal. Periksa data Anda.");
         await authClient.signOut();
-        const browserSession = await authClient.signIn.email({ email: normalizedEmail, password, rememberMe: false });
+        const browserSession = await authClient.signIn.email({ email: identifier, password, rememberMe: false });
         if (browserSession.error) throw new Error(browserSession.error.message || "Akun berhasil dibuat, tetapi sesi belum dapat dimulai.");
       }
       window.localStorage.setItem(AUTH_ACTIVITY_STORAGE_KEY, String(Date.now()));
@@ -2251,8 +2275,8 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
   };
 
   const headings: Record<AuthMode, { title: string; description: string }> = {
-    login: { title: "Selamat datang kembali.", description: "Masuk untuk melanjutkan pekerjaan tim riset." },
-    register: { title: "Buat akun anggota.", description: "Gunakan email yang sudah diizinkan admin dan password minimal 8 karakter." },
+    login: { title: "Selamat datang kembali.", description: "Masuk menggunakan email atau username untuk melanjutkan pekerjaan tim riset." },
+    register: { title: "Buat akun anggota.", description: "Gunakan email yang sudah diizinkan admin, username unik, dan password minimal 8 karakter." },
     forgot: { title: "Lupa password?", description: "Masukkan email akun Anda. Admin akan menerima permintaan dan memberikan password sementara secara manual." },
   };
 
@@ -2272,7 +2296,8 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
           <p className="mt-3 text-sm leading-6 text-[#6d767a]">{headings[mode].description}</p>
           <form onSubmit={submit} className="mt-8 space-y-4">
             {mode === "register" && <label className="block text-xs font-bold text-[#59656c]">Nama lengkap<Input value={name} onChange={(event) => setName(event.target.value)} className="mt-2" placeholder="Nama anggota tim" autoComplete="name" required /></label>}
-            <label className="block text-xs font-bold text-[#59656c]">Email<Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2" placeholder="nama@perusahaan.com" autoComplete="email" required /></label>
+            <label className="block text-xs font-bold text-[#59656c]">{mode === "login" ? "Email atau username" : "Email"}<Input type={mode === "login" ? "text" : "email"} value={email} onChange={(event) => { const value = event.target.value; setEmail(value); if (mode === "register" && !username) setUsername(value.split("@")[0].toLowerCase().replace(/[^a-z0-9._]/g, ".").slice(0, 30)); }} className="mt-2" placeholder={mode === "login" ? "email atau username" : "nama@perusahaan.com"} autoComplete={mode === "login" ? "username" : "email"} required /></label>
+            {mode === "register" && <label className="block text-xs font-bold text-[#59656c]">Username<Input value={username} onChange={(event) => setUsername(event.target.value.toLowerCase())} className="mt-2" placeholder="contoh: angga.gideon" autoComplete="username" minLength={3} maxLength={30} required /><span className="mt-1.5 block text-[10px] font-normal leading-4 text-[#8a9194]">Dipakai untuk login dan @mention. Huruf kecil, angka, titik, atau underscore.</span></label>}
             {(mode === "login" || mode === "register") && <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Minimal 8 karakter" autoComplete={mode === "login" ? "current-password" : "new-password"} action={mode === "login" ? <button type="button" onClick={() => switchMode("forgot")} className="font-semibold text-[#e76f36] hover:underline">Lupa password?</button> : undefined} />}
             {error && <div className="border-l-2 border-[#d8564e] bg-[#f9e8e5] px-3 py-2 text-xs text-[#a43d37]">{error}</div>}
             {notice && <div role="status" aria-live="polite" data-testid="password-recovery-success" className="border-l-2 border-[#4f826c] bg-[#e5efe9] px-4 py-3 text-xs text-[#356450]"><div className="flex items-center gap-2 font-bold"><Check size={16} />Permintaan berhasil dikirim</div><p className="mt-1.5 leading-5">{notice}</p></div>}
@@ -2280,6 +2305,7 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
           </form>
           {mode === "login" && demoEnabled && <><div className="my-5 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#9a9fa2]"><span className="h-px flex-1 bg-[#dedbd3]" />atau<span className="h-px flex-1 bg-[#dedbd3]" /></div><Button type="button" variant="outline" className="w-full" onClick={onEnterDemo}><LayoutDashboard size={17} /> Masuk mode demo</Button><p className="mt-2 text-center text-[11px] leading-5 text-[#8a9194]">Gunakan data mock untuk mengecek Dashboard dan Kanban tanpa backend.</p></>}
           {(mode === "login" || mode === "register") ? <div className="mt-6 border-t border-[#dedbd3] pt-5 text-center text-xs text-[#717a7e]">{mode === "login" ? "Belum memiliki akun?" : "Sudah memiliki akun?"} <button onClick={() => switchMode(mode === "login" ? "register" : "login")} className="font-bold text-[#e76f36] hover:underline">{mode === "login" ? "Daftar sekarang" : "Masuk di sini"}</button></div> : <div className="mt-6 border-t border-[#dedbd3] pt-5 text-center text-xs"><button onClick={() => switchMode("login")} className="font-bold text-[#e76f36] hover:underline">Kembali ke halaman masuk</button></div>}
+          <div className="mt-8 text-center text-[10px] leading-5 text-[#92989b]">© 2026 360 – Center of Research<br />Made by Angga Santa Gideon</div>
         </div>
       </section>
     </main>
@@ -2292,7 +2318,7 @@ export default function Home() {
   const [demoReady, setDemoReady] = useState(false);
   const [active, setActive] = useState<View>("dashboard");
   const [projects, setProjects] = useState<Project[]>([]);
-  const [profile, setProfile] = useState<ProfileData>({ name: "Angga Demo", email: "angga.demo@ruangriset.id", role: "Research Lead", image: null });
+  const [profile, setProfile] = useState<ProfileData>({ name: "Angga Demo", email: "angga.demo@ruangriset.id", username: "angga.demo", role: "Research Lead", image: null });
   const [isAdmin, setIsAdmin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const idleLogoutStarted = useRef(false);
@@ -2313,9 +2339,9 @@ export default function Home() {
     let cancelled = false;
     fetch("/api/profile")
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load profile")))
-      .then((payload: { data: { name: string; email: string; image: string | null; isAdmin: boolean } }) => {
+      .then((payload: { data: { name: string; email: string; username: string | null; image: string | null; isAdmin: boolean } }) => {
         if (!cancelled) {
-          setProfile((current) => ({ ...current, name: payload.data.name, email: payload.data.email, image: payload.data.image, role: payload.data.isAdmin ? "Administrator" : current.role }));
+          setProfile((current) => ({ ...current, name: payload.data.name, email: payload.data.email, username: payload.data.username, image: payload.data.image, role: payload.data.isAdmin ? "Administrator" : current.role }));
           setIsAdmin(payload.data.isAdmin);
         }
       })
@@ -2385,11 +2411,11 @@ export default function Home() {
     const response = await fetch("/api/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: nextProfile.name, image: nextProfile.image }),
+      body: JSON.stringify({ name: nextProfile.name, username: nextProfile.username, image: nextProfile.image }),
     });
-    if (!response.ok) throw new Error("Failed to save profile");
-    const payload = await response.json() as { data: { name: string; email: string; image: string | null } };
-    setProfile({ ...nextProfile, name: payload.data.name, email: payload.data.email, image: payload.data.image });
+    const payload = await response.json() as { data?: { name: string; email: string; username: string | null; image: string | null }; error?: string };
+    if (!response.ok || !payload.data) throw new Error(payload.error || "Perubahan profil belum tersimpan.");
+    setProfile({ ...nextProfile, name: payload.data.name, email: payload.data.email, username: payload.data.username, image: payload.data.image });
   };
 
   let page: React.ReactNode;
@@ -2407,7 +2433,7 @@ export default function Home() {
       <div className="lg:pl-[252px]">
         <Header active={active} onMenu={() => setMenuOpen(true)} profile={profile} onProfile={() => setActive("profile")} onNavigate={setActive} backendEnabled={!!session} />
         <main className="mx-auto max-w-[1600px] px-5 py-7 md:px-8 md:py-9">{page}</main>
-        <footer className="mx-5 flex items-center justify-between border-t border-[#ddd9d0] py-5 text-[10px] uppercase tracking-[.14em] text-[#989d9f] md:mx-8"><span>360 - Center of Research © 2026 · v{APP_VERSION}</span><span className="flex items-center gap-1.5"><Sparkles size={11} /> Keep curiosity alive</span></footer>
+        <footer className="mx-5 flex flex-col gap-2 border-t border-[#ddd9d0] py-5 text-[10px] tracking-[.08em] text-[#989d9f] sm:flex-row sm:items-center sm:justify-between md:mx-8"><span>© 2026 360 – Center of Research · Made by Angga Santa Gideon</span><span className="flex items-center gap-1.5 uppercase tracking-[.14em]"><Sparkles size={11} /> v{APP_VERSION} · Keep curiosity alive</span></footer>
       </div>
     </div>
   );

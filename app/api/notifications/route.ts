@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { notifications } from "@/db/schema";
 import { badRequest, getApiSession, unauthorized } from "@/lib/api";
 import { ensureUpcomingNotifications } from "@/lib/services/notification-service";
+import { syncActiveAnnouncementsForUser } from "@/lib/services/announcement-service";
 
 export const runtime = "nodejs";
 
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
   const unreadParam = url.searchParams.get("unreadOnly");
   if (unreadParam && !["true", "false"].includes(unreadParam)) return badRequest("unreadOnly must be true or false");
 
-  await ensureUpcomingNotifications(session.user.id);
+  await Promise.all([ensureUpcomingNotifications(session.user.id), syncActiveAnnouncementsForUser(session.user.id)]);
   const conditions: SQL[] = [eq(notifications.userId, session.user.id)];
   if (unreadParam === "true") conditions.push(isNull(notifications.readAt));
 
