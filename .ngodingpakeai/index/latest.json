@@ -1,0 +1,922 @@
+{
+  "version": 1,
+  "generatedAt": "2026-09-02T07:38:51.215Z",
+  "project": "Kamar 360",
+  "stats": {
+    "scanned": 106,
+    "included": 97,
+    "ignored": 3,
+    "skippedBinary": 3
+  },
+  "byLanguage": {
+    "markdown": 3,
+    "typescript": 66,
+    "css": 1,
+    "yaml": 3,
+    "sql": 9,
+    "json": 12,
+    "javascript": 1
+  },
+  "files": [
+    {
+      "path": ".env.example",
+      "language": null,
+      "kind": null,
+      "size": 0,
+      "fileHash": "a3046da0d15a27e89f2afe639b25748a7ad4d9290af3e7b1b6c1a5533c8f0a8c",
+      "ignored": true,
+      "ignoreReason": "matched hard-block rule (secret/build/dependency)"
+    },
+    {
+      "path": ".env.local",
+      "language": null,
+      "kind": null,
+      "size": 0,
+      "fileHash": "74dd9d08974aed4457940214a64b43ce175d062d74e72309b003f02c24f98b30",
+      "ignored": true,
+      "ignoreReason": "matched hard-block rule (secret/build/dependency)"
+    },
+    {
+      "path": ".gitignore",
+      "language": null,
+      "kind": null,
+      "size": 277,
+      "fileHash": "0a173d339a7db2ef566ed644f90bf9f0da1cc36c596dd5e61bfefc638df41669",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": ".ngodingpakeaiignore",
+      "language": null,
+      "kind": null,
+      "size": 269,
+      "fileHash": "ee5d23b12408001feaa7918d069db5243b3a8398ea6475c0fb749573a26ff671",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "AGENTS.md",
+      "language": "markdown",
+      "kind": "doc",
+      "size": 17617,
+      "fileHash": "3b31afb9b7447fc5b6f9ffe3014b9deca761f84564d9851a879124e11add212f",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/activity/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 2544,
+      "fileHash": "816ebb706c1f8873bb5054fa15896b6273b8ca12dcb53df7c77889cc7101fe8c",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/admin/announcements/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 3178,
+      "fileHash": "aa21d78c6553a723d481ace681b47903ea37d096a94a795cab3ace42a950a310",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/admin/announcements/[id]/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 1877,
+      "fileHash": "0ba57a18fcae2f2086c25364ab92f400568494c905937d67a0bba314cb3ae68a",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/admin/backups/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 1526,
+      "fileHash": "1046fcd7e2924e18cf7f919ba3f696f90677379a98e8fdf9d8811dc97070c028",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/admin/backups/[id]/restore/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 1429,
+      "fileHash": "7f21506f7953e39c1a9f0d5c913bfdc48ef30a423be7f830bf37af94af1dc392",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/admin/backups/[id]/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 1143,
+      "fileHash": "5e934dd9d9cbc86039a67e6d0afe0724223d0f5688c55adee1c673ec84dee930",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/admin/invites/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 3316,
+      "fileHash": "bef3c335c5ad2a9f354aa1307f40675a450e714a3fc89015a3c35571b8ed3a2b",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/admin/invites/[id]/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 1366,
+      "fileHash": "3e6ca822b1bb29125e53e621a121858704c02cae74f1c728a2ae03d03af9b521",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/admin/password-resets/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 954,
+      "fileHash": "2e444566ca9fe4868da16d26e5dba3ed4d16951af39271296b8222823826c920",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/admin/password-resets/[id]/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 3003,
+      "fileHash": "a87d933b0b4520f8e72107012d004b09ad0db872ac1d2505ad652129449d0b7d",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/agendas/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 2444,
+      "fileHash": "19afff9f5daa312ac2bba5d7c2949e0e6fc41483c4dbbbbaa818b59de43e2e40",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/agendas/[id]/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 2920,
+      "fileHash": "cdc550485011f04575d498ae62cb3c266dc60964e487f063587b8ea5c7cad100",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/announcements/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 464,
+      "fileHash": "4b374cd4a2e3d82a1aac2782edbfef4bb450612b329030a14e52c5f378fe775e",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/assets/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 2257,
+      "fileHash": "071ebb9391c1f66e4915e8fccb4bee97ba2e1212d602c3b87cd1408abaa930e2",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/assets/[id]/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 2840,
+      "fileHash": "acbe4cff74d9469aa012e56b35b1e6c0833073986c84b744a9d350d7b2da4996",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/auth/[...all]/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 176,
+      "fileHash": "d03f3ed3e6f34a91ce95ec3d05f36deb4be60aa6eaf77b91124587361cbd9b2d",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/dashboard/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 3783,
+      "fileHash": "7b4bb5c3643ffb4c550f513d6f21c13c89e7cd71948261d0ad96f410d69a3e46",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/health/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 271,
+      "fileHash": "3a6026879a53e0ca3328bdedd69d257fdcb7d9b91d48bf1d61d53de534a09b53",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/members/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 438,
+      "fileHash": "ec1270c31d396b926b28bd6b7a2ec0795fc2c3637e6fe293082ef0848c9dfc4a",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/notifications/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 2097,
+      "fileHash": "2ed9e07cd977a894729ebf1d2a970a1fcb458a0a5372845b2f9bb3dd5c355a70",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/notifications/[id]/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 846,
+      "fileHash": "cab60fec7a6f1021008459aa5d8fef15bfccb9bc0a4ffaa17aded6c28921f62e",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/password-recovery/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 1023,
+      "fileHash": "746f7a8189ae1c414796825902ecb7fc47140b49fd38e79a1fb65efafaf17d43",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/presence/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 1415,
+      "fileHash": "bf2a6ef1749e49c32af7ae0747c0c2408d925d64bc1c1ad9b1d8591de850e49f",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/profile/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 2849,
+      "fileHash": "e5f3abe004b447ec9545edf5b950f9b949bb314bf1b39321e0697e6d6e1955c3",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/projects/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 3472,
+      "fileHash": "beab2061aafff82ca1f02bf8125caf37d78783f55e6386f4c5c909df8d9d0f93",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/projects/[id]/approval/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 3184,
+      "fileHash": "79d08f95e0e140641ec8eb36dde984bd23383a13df5f45c6dcb20f9372fdbf5a",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/projects/[id]/approval/[approvalId]/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 3382,
+      "fileHash": "d0472d671ec7ff5f0e00b44ba8b75905cc230915a53a44564d2938a11f809cbd",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/projects/[id]/archive/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 3468,
+      "fileHash": "22d06c84519b07e328bfa322a4365b5888825cf88b9b346ec1dbeef5766e8907",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/projects/[id]/collaboration/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 707,
+      "fileHash": "2b950610f2825f261363fbb34eecfc1a54591b00f62dcdbefdd341853ec0d5c1",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/projects/[id]/comments/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 2334,
+      "fileHash": "13421d738ea6c90df4ab35d13928c73416dd43049e3f857f3a7f03ef2514ef13",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/projects/[id]/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 5921,
+      "fileHash": "46e4cdc4adc0bc1f1ad097a7c01e4a3948b066fef2bebf15ffca255639d9539e",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/projects/[id]/versions/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 1143,
+      "fileHash": "bbe181432099930f5b96338bb7b773ec11ff16b33b9ce827da6baf079e9a87fc",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/projects/[id]/versions/[versionId]/restore/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 3089,
+      "fileHash": "3afb64936e82d5c2a14292f91e001372b0876be196fb1ad36d1321125fb9d2f0",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/api/search/route.ts",
+      "language": "typescript",
+      "kind": "route",
+      "size": 2451,
+      "fileHash": "1166cb402cafceb71baa3f224b2acb4f98ec2f5ec7e0e268bd5bb85bdf3fda8f",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/globals.css",
+      "language": "css",
+      "kind": "style",
+      "size": 17287,
+      "fileHash": "7550774af9f37b536be0aa91ba4d2bd7f3157453be3b7e4a9119ba25f0f0b2d6",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/layout.tsx",
+      "language": "typescript",
+      "kind": "source",
+      "size": 600,
+      "fileHash": "51cc493e80ccc9dd10a96862b282b165ce63dde0ea3efe18ace2e4c41dc14d6f",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/manifest.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 592,
+      "fileHash": "5329c6097d3191708ea3281eb206104c1850343ef5222fe6763612b9bfea2b87",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "app/page.tsx",
+      "language": "typescript",
+      "kind": "source",
+      "size": 204970,
+      "fileHash": "6efdf509a785a0658b2e31a8c33d298de14321d9672179370e99cc76241c1eb0",
+      "ignored": true,
+      "ignoreReason": "potential secret: env credential assignment (line 69)"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "language": "markdown",
+      "kind": "doc",
+      "size": 5822,
+      "fileHash": "d5f39abed5870cce05657989ba4a5feaadb728970d5f7a86dd491446d04cb5bc",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "components/announcement-banner.tsx",
+      "language": "typescript",
+      "kind": "component",
+      "size": 3010,
+      "fileHash": "b625a9952053837b74aa50b9f11bc8df983c717111667a6b36052deac97184c9",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "components/announcement-manager.tsx",
+      "language": "typescript",
+      "kind": "component",
+      "size": 7365,
+      "fileHash": "f58dab0b98dcf2fc49c34049c66b66b12ae7d514e2f6192a06ac737b8eee14be",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "components/engagement-dashboard.tsx",
+      "language": "typescript",
+      "kind": "component",
+      "size": 22594,
+      "fileHash": "5a11d1186a8d841886434cb9af28a6394b1043efbf6a59abfc21a1a23a7e0353",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "components/project-version-history.tsx",
+      "language": "typescript",
+      "kind": "component",
+      "size": 4018,
+      "fileHash": "2b4c06916b531de96219f208ece7637da6ddc485430fb9e83b94ecbc2a146662",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "components/ui/avatar.tsx",
+      "language": "typescript",
+      "kind": "component",
+      "size": 848,
+      "fileHash": "e1da1ff9ca2ca30b332d9570011e80bdc74ef3109c15118352c0b6b0febfe60a",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "components/ui/badge.tsx",
+      "language": "typescript",
+      "kind": "component",
+      "size": 302,
+      "fileHash": "782c09cd8681f441bd5c914f7d1539303b3c0c23afee411bf2341b6df332a6e0",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "components/ui/button.tsx",
+      "language": "typescript",
+      "kind": "component",
+      "size": 1456,
+      "fileHash": "cddee69259308782714197fc3391e3131962ce22cde9df610493e3998bb64743",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "components/ui/dialog.tsx",
+      "language": "typescript",
+      "kind": "component",
+      "size": 2062,
+      "fileHash": "27c04f34f07ec4f980adcfa0eb1af7eb97691de8ac5378380353466f5010dd72",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "components/ui/input.tsx",
+      "language": "typescript",
+      "kind": "component",
+      "size": 495,
+      "fileHash": "28aa957f0ba6ab27795fbbd65de47e54854f09668e445ee5e70cf5e27c63d173",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "compose.yaml",
+      "language": "yaml",
+      "kind": "source",
+      "size": 464,
+      "fileHash": "3eccfb988776e2441b637bb009ca7b7a6e5db7acced3e293b336599be5c3b1f7",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "db/index.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 725,
+      "fileHash": "6e1ef6ee9d382b0f1638b9720fde97274251c2ccf768812f4d80968f6f93ee01",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "db/schema.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 18634,
+      "fileHash": "9afcb08040db1364840aaf0bfd46edae9c26a327d40ec1d36bfcf72df748e050",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/0000_initial_postgres.sql",
+      "language": "sql",
+      "kind": "schema",
+      "size": 6089,
+      "fileHash": "291fcfd5253de449ab047da3edc3fe79b4b041e9488c52afefdf7282cd3d1f76",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/0001_cute_nocturne.sql",
+      "language": "sql",
+      "kind": "schema",
+      "size": 184,
+      "fileHash": "b9e7690df9ed31dc7432fd482ea3ae63c240887c9b799124d01c36bfb7050979",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/0002_curious_fixer.sql",
+      "language": "sql",
+      "kind": "schema",
+      "size": 1512,
+      "fileHash": "cd6375bdc16d383813f68da4ce461e39950d6bbe99251d6380777705c0aa6496",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/0003_flaky_rage.sql",
+      "language": "sql",
+      "kind": "schema",
+      "size": 593,
+      "fileHash": "ae06f9177305ebb52e975e0ff858b28c2d32e7052fef97f097a99a1783e6e03c",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/0004_silent_catseye.sql",
+      "language": "sql",
+      "kind": "schema",
+      "size": 1034,
+      "fileHash": "877f08967a04e9a35c525ee0efaca6cb4d077c4d62eafcbb85ecdfb2b942c103",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/0005_fuzzy_master_mold.sql",
+      "language": "sql",
+      "kind": "schema",
+      "size": 5659,
+      "fileHash": "7f85316cd4e5520e35a39d995c056a1e139ef3d2b7a2a7622537c96e07c85216",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/0006_wild_nemesis.sql",
+      "language": "sql",
+      "kind": "schema",
+      "size": 726,
+      "fileHash": "8b1d2d3bb126cfeadf73a6d24a694ffde950361853842bb54874a625e4f7e3d5",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/0007_lazy_marvel_boy.sql",
+      "language": "sql",
+      "kind": "schema",
+      "size": 1009,
+      "fileHash": "6d105322898a14ebbcb281b29acafdc2b328040a41ef02c7f4b2ea194a577a99",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/0008_thin_cyclops.sql",
+      "language": "sql",
+      "kind": "schema",
+      "size": 4324,
+      "fileHash": "e66569575746e2b3c705db5474d7d21ed86f1f76972f4f09192db15625fb002d",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/meta/0000_snapshot.json",
+      "language": "json",
+      "kind": "source",
+      "size": 23976,
+      "fileHash": "de863406eb2afe1f4b900336c6b42e824a251ff73a6b42a05c951c1a89135b4a",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/meta/0001_snapshot.json",
+      "language": "json",
+      "kind": "source",
+      "size": 24712,
+      "fileHash": "2ae23ff2184db681702069d1ebb3af59ee20a611bcc392aab285a2b2e29e0725",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/meta/0002_snapshot.json",
+      "language": "json",
+      "kind": "source",
+      "size": 30026,
+      "fileHash": "cab7a0742415df22002dcfe2a7cf11ce2765bf529b9f20a8efc8c1247c7e5e2a",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/meta/0003_snapshot.json",
+      "language": "json",
+      "kind": "source",
+      "size": 32126,
+      "fileHash": "b9dcc2ef89fced193756df2506ea2eb861d55e49325b84c449d6975a3cbee90f",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/meta/0004_snapshot.json",
+      "language": "json",
+      "kind": "source",
+      "size": 35164,
+      "fileHash": "de59d8a1a9ea2891ac43ff03edd287612d50f4e5509dc667b3040ad0bd7a44f3",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/meta/0005_snapshot.json",
+      "language": "json",
+      "kind": "source",
+      "size": 49842,
+      "fileHash": "3c31676e2e89d729916210f4e598142eee2c1472f772084de4bd5d39958fcb07",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/meta/0006_snapshot.json",
+      "language": "json",
+      "kind": "source",
+      "size": 52199,
+      "fileHash": "eeafb09d9d354b9400d32f11397e1197653ad006d7d553365e8e22e64bd8625d",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/meta/0007_snapshot.json",
+      "language": "json",
+      "kind": "source",
+      "size": 55359,
+      "fileHash": "9a7d3e94e4bfb638a890a4d04def0464e723e082fca561cd89528efe0d9f54ef",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/meta/0008_snapshot.json",
+      "language": "json",
+      "kind": "source",
+      "size": 63967,
+      "fileHash": "5a81e39ef73e2dafb3d6fe4f5fd74fee0c1ca64b5894ba7df9a228a6caf040e1",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle/meta/_journal.json",
+      "language": "json",
+      "kind": "source",
+      "size": 1340,
+      "fileHash": "97cee2b4647644fdd7fcc2562143bd8063ad258c5465e3576d97562918781b92",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "drizzle.config.ts",
+      "language": "typescript",
+      "kind": "config",
+      "size": 363,
+      "fileHash": "e4378d9a5695617faf4345ab2b3e1b2a89706de052aff350122f32880f287b35",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "lib/activity-filter.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 1338,
+      "fileHash": "34309826916d779df610816559848993c55c580c34efb377d7c8071001430ee5",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "lib/admin.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 730,
+      "fileHash": "82208fb26cf01bc88ae13bd12618c23f9921f4c4e0b83d1b322bcf7a9d22a7f0",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "lib/api.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 822,
+      "fileHash": "0599aea0e2dcf2e127a61031085587c739a60de78a6a2cb56a56575ab0262077",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "lib/auth-client.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 193,
+      "fileHash": "5eb246c31cb297f123351af53589466d99cd66b841315874ae4d17d827de9d2d",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "lib/auth.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 2152,
+      "fileHash": "844787de8b306bdf030b4e55c4f6639f56973f964db680e9de452ca4904d6ce1",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "lib/models/project.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 596,
+      "fileHash": "807d0f275ebc1c72814d74c26546a312d98de02f6d801de3a4e293103826445c",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "lib/services/announcement-service.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 2299,
+      "fileHash": "7dc0f9ab97f0cb3d52b0f6edd49e0539bf70cfbe6fe1c5aaf22b30889a9e1360",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "lib/services/notification-service.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 9378,
+      "fileHash": "1740a5fe7fcd33f080b7d7ea3968ddb63180368a010e57ecc0b8522739573693",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "lib/services/project-collaboration-service.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 7214,
+      "fileHash": "008fc1bedb1bd623bfcfafe6f28d8ac4c63ce034fab74bc8a6eac17a0694f8dd",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "lib/services/project-service.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 9150,
+      "fileHash": "571b8cdb5f4fb167573deee49e8301ac9603f9fc6b66b8d249cbebd8ba462faa",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "lib/services/project-version-service.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 2796,
+      "fileHash": "f7aa501a14b6962fdee806ddc264577f8cd2e0f47e04d9e8f8ffd0d41b595318",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "lib/services/workspace-backup-service.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 13110,
+      "fileHash": "f64600a5765941c23963cab827289c03d34e3172e7c53c0a5dd6448d4b49fae8",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "lib/utils.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 169,
+      "fileHash": "d1f1e0d62cb8d8d1e04c26e14de842d8a151f75812d81b046c65b5d1fe8e4b27",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "lib/validation.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 3325,
+      "fileHash": "b24865e2aa4dde784a459c16413fa53ef3fe56da86e40933286886ed4b5a8b83",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "next-env.d.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 262,
+      "fileHash": "85ae5aee75f011967cf2d25cbc342f62d69314e9d925f7f4aa3456fc2cffcca6",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "next.config.ts",
+      "language": "typescript",
+      "kind": "config",
+      "size": 949,
+      "fileHash": "f53d19d20bc6753475cc607c60ffa5a2a0ea7c52f2f1665cdd66e0aa53c3402b",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "package.json",
+      "language": "json",
+      "kind": "config",
+      "size": 1313,
+      "fileHash": "87c051e7c5884d4f4ef959c1202b73cdb7907fc6e9e88c733af1d0b6dd6dab31",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "language": "yaml",
+      "kind": "source",
+      "size": 163866,
+      "fileHash": "d592d15c9affa2b170c01f37e43bfe096b0a5d4c1c4112ec125488cd3b8a0d97",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "language": "yaml",
+      "kind": "source",
+      "size": 43,
+      "fileHash": "693cf7cefcb2fae7867632d77a78dc3d245b303e0009e37e8935ab838317e649",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "postcss.config.mjs",
+      "language": "javascript",
+      "kind": "config",
+      "size": 70,
+      "fileHash": "5b0bc4c78be977cd81f947fb5563aaa7cc6d451e6f1c53a3260b7656a7144d20",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "README.md",
+      "language": "markdown",
+      "kind": "doc",
+      "size": 3810,
+      "fileHash": "351c074d46492504ac3f05a12b6abe0d8f255a165e12ca18db1399db34d1fae6",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "scripts/migrate.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 822,
+      "fileHash": "430542f1dd0c48fc573318373cd132aa1f537604da7462c16ed6d179cc6965da",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "scripts/seed.ts",
+      "language": "typescript",
+      "kind": "source",
+      "size": 7529,
+      "fileHash": "3de2d6291830627f6c22ea679700926a88543b5a2e25396617f71d75dacacc18",
+      "ignored": false,
+      "ignoreReason": null
+    },
+    {
+      "path": "tsconfig.json",
+      "language": "json",
+      "kind": "config",
+      "size": 563,
+      "fileHash": "f9231e4c2e6c7857d2d307424c1c1116c49347fd4d43887f7ce509df7dcc7704",
+      "ignored": false,
+      "ignoreReason": null
+    }
+  ]
+}

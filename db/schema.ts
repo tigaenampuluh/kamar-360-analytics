@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm";
-import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, real, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).defaultNow().notNull();
@@ -298,6 +298,83 @@ export const workspaceBackups = pgTable("workspace_backups", {
   index("idx_workspace_backups_created_at").on(table.createdAt),
 ]);
 
+export const engagementContents = pgTable("engagement_contents", {
+  id: serial("id").primaryKey(),
+  platform: text("platform", { enum: ["instagram", "tiktok", "youtube"] }).notNull(),
+  profileUrl: text("profile_url").notNull(),
+  username: text("username").notNull(),
+  externalId: text("external_id").notNull(),
+  contentType: text("content_type", { enum: ["photo", "carousel", "reels", "tiktok_video", "youtube_video", "shorts"] }).notNull(),
+  title: text("title").notNull(),
+  url: text("url").notNull(),
+  publishedAt: timestamp("published_at", { withTimezone: true }).notNull(),
+  views: integer("views").notNull().default(0),
+  likes: integer("likes").notNull().default(0),
+  comments: integer("comments").notNull().default(0),
+  shares: integer("shares"),
+  engagementRate: real("engagement_rate").notNull().default(0),
+  isBest: boolean("is_best").notNull().default(false),
+  unavailableFields: jsonb("unavailable_fields").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  source: text("source").notNull().default("mock"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (table) => [
+  uniqueIndex("idx_engagement_contents_profile_external").on(table.profileUrl, table.externalId),
+  index("idx_engagement_contents_profile_published").on(table.profileUrl, table.publishedAt),
+  index("idx_engagement_contents_profile_type_published").on(table.profileUrl, table.contentType, table.publishedAt),
+  index("idx_engagement_contents_platform_type").on(table.platform, table.contentType),
+]);
+
+export const engagementAnalysisHistory = pgTable("engagement_analysis_history", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+  platform: text("platform", { enum: ["instagram", "tiktok", "youtube"] }).notNull(),
+  profileUrl: text("profile_url").notNull(),
+  username: text("username").notNull(),
+  followersCount: integer("followers_count").notNull().default(0),
+  followersChangePercent: real("followers_change_percent").notNull().default(0),
+  contentCount: integer("content_count").notNull().default(0),
+  erAverage: real("er_average").notNull().default(0),
+  erMedian: real("er_median").notNull().default(0),
+  erWeighted: real("er_weighted").notNull().default(0),
+  totalInteractions: integer("total_interactions").notNull().default(0),
+  totalViews: integer("total_views").notNull().default(0),
+  unavailableFields: jsonb("unavailable_fields").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  source: text("source").notNull().default("mock"),
+  analyzedAt: timestamp("analyzed_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (table) => [
+  index("idx_engagement_history_user_analyzed").on(table.userId, table.analyzedAt),
+  index("idx_engagement_history_profile_analyzed").on(table.profileUrl, table.analyzedAt),
+  index("idx_engagement_history_platform_analyzed").on(table.platform, table.analyzedAt),
+]);
+
+export const engagementPlatformConnections = pgTable("engagement_platform_connections", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  platform: text("platform", { enum: ["instagram", "tiktok", "youtube"] }).notNull(),
+  providerAccountId: text("provider_account_id").notNull(),
+  username: text("username"),
+  profileUrl: text("profile_url"),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+  refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { withTimezone: true }),
+  scope: text("scope"),
+  status: text("status", { enum: ["connected", "expired", "revoked", "error"] }).notNull().default("connected"),
+  lastConnectedAt: timestamp("last_connected_at", { withTimezone: true }),
+  lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+  lastError: text("last_error"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (table) => [
+  uniqueIndex("idx_engagement_connections_user_platform").on(table.userId, table.platform),
+  uniqueIndex("idx_engagement_connections_platform_account").on(table.platform, table.providerAccountId),
+  index("idx_engagement_connections_user_status").on(table.userId, table.status),
+  index("idx_engagement_connections_checked_at").on(table.lastCheckedAt),
+]);
+
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
@@ -308,6 +385,8 @@ export const userRelations = relations(user, ({ many }) => ({
   projectMentions: many(projectCommentMentions),
   announcements: many(announcements),
   projectVersions: many(projectVersions),
+  engagementAnalysisHistory: many(engagementAnalysisHistory),
+  engagementPlatformConnections: many(engagementPlatformConnections),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -381,6 +460,10 @@ export const announcementRelations = relations(announcements, ({ one, many }) =>
 export const projectVersionRelations = relations(projectVersions, ({ one }) => ({
   project: one(projects, { fields: [projectVersions.projectId], references: [projects.id] }),
   author: one(user, { fields: [projectVersions.createdBy], references: [user.id] }),
+}));
+
+export const engagementPlatformConnectionRelations = relations(engagementPlatformConnections, ({ one }) => ({
+  user: one(user, { fields: [engagementPlatformConnections.userId], references: [user.id] }),
 }));
 
 export const authSchema = { user, session, account, verification, rateLimit };

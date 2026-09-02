@@ -11,33 +11,111 @@ repository with NgodingPakeAI, follow this skill.
 
 ## Prerequisites
 - Node.js available (the CLI runs via `npx ngodingpakeai …`).
-- Workspace ID: `<workspace_id>`
+- Workspace ID: `356a5545-9579-4daf-a6b3-26b4def81586`
 - An access token starting with `ngpk_`. Provide it via the `NGODINGPAKEAI_TOKEN`
   environment variable (preferred) or the `--token` flag on `connect`.
-  Create one at https://www.ngodingpakeai.com/workspace → "Connect Codebase".
+  Create one at https://www.ngodingpakeai.com/settings (API keys). Synced content is viewable at https://www.ngodingpakeai.com/workspace/356a5545-9579-4daf-a6b3-26b4def81586.
 
-## Instructions — run these in order
+## How sync works (one mode — YOU write the summaries)
+NgodingPakeAI never uploads or stores raw source code. Instead **you**, the
+agent, write short natural-language summaries of the code — locally, where you
+already have file access — and the CLI uploads only file metadata + those
+summaries. The server embeds them for semantic search and codebase chat, then
+rolls them up into canonical repository/app/package docs. Every generated doc
+keeps the exact contributing file paths and commit as source metadata.
+
+## Existing codebase? The summary sync builds the pending plan for you
+There are two safe entry points for an existing codebase:
+- When this skill was installed from a Wiki/workspace page, the **Workspace ID
+  above is the exact target**. Connect this repo to that workspace and do not
+  choose a default workspace, create a new one, or follow another workspace
+  link.
+- When onboarding starts without a workspace target, the web app prepares an
+  empty workspace with one **pending baseline plan** before the agent connects.
+
+After the final summary sync, the
+server reads the docs it just built and works BACKWARDS to produce the planning
+documents — a PRD, then fitur and sub-fitur — describing the app **as it already
+is**. Those fitur are created with status `done` and **no tasks**, because the
+code for them already exists.
+
+This means a user with an existing project does NOT have to write a PRD by hand.
+They connect, sync once, and the workspace is populated.
+
+## Reverse state transitions
+The server owns the reverse state. Advance it by completing the CLI sync flow;
+never edit the database, call the HTTP API directly, or invent a separate state
+command. The expected transitions are:
+
+- `waiting`: the prepared plan is waiting for the repository connection or first metadata pass.
+- `syncing`: the CLI has started a sync run; wait for `sync` to complete.
+- `awaiting_summaries`: `sync --plan` completed, but the agent still needs to write the requested summaries.
+- `building_wiki`: the final `sync` uploaded summaries successfully and the server is rebuilding repository documentation.
+- `running`: the wiki is ready and the server is generating the reverse PRD and feature inventory.
+- `done`: the reverse plan is populated; its features describe existing code and have no implementation tasks.
+- `error`: the server could not build the reverse plan; show the printed workspace/plan link and ask the user to retry from the web UI.
+
+For a prepared reverse plan, `sync --plan` moves the flow toward
+`awaiting_summaries`; writing `summaries.json` and running the final
+`sync` moves it toward `building_wiki`. The server then advances the state
+to `running` and `done` asynchronously. Run `status` after sync to confirm
+the upload and report the exact link printed by the CLI, but do not poll or
+manually mutate reverse state from the agent.
+
+What you must do about it:
+- The pending plan row exists before sync starts, but its CONTENTS take ~1–6
+  minutes (the server is writing the PRD and reading out the fitur). The CLI
+  prints the workspace link — **give that link to the user** and tell them the
+  plan is still being assembled. Do not wait/poll for it, and do not re-run sync
+  to "make it finish".
+- This reverse bootstrap happens ONLY for the prepared pending plan in its
+  reserved workspace. If the skill above contains a real Workspace ID from an
+  existing Wiki page, keep the sync in that exact workspace; do not redirect it
+  to the reserved/default workspace.
+- Never try to build the PRD or fitur yourself through the CLI. The server does
+  it from the summaries you already wrote.
+
+## Instructions — the sync loop
 1. `npx ngodingpakeai doctor` — check environment + connectivity.
-2. `npx ngodingpakeai connect --workspace <workspace_id> --token "$NGODINGPAKEAI_TOKEN"` — link this repo to the workspace.
-3. `npx ngodingpakeai status` — show current sync state.
-4. `npx ngodingpakeai index` — scan locally and build the safe index (file map, selected files, summaries). **Review the printed summary.**
-5. If there are NO critical warnings: `npx ngodingpakeai sync` — upload the safe context.
-6. `npx ngodingpakeai status` — confirm the result.
-7. Report to the user: the workspace URL, indexed file count, ignored file count, and any warnings.
+2. `npx ngodingpakeai connect --workspace 356a5545-9579-4daf-a6b3-26b4def81586 --token "$NGODINGPAKEAI_TOKEN"` — link this repo to the workspace (first time only).
+3. `npx ngodingpakeai sync --plan` — detects repository apps/packages, scans + uploads file METADATA (paths/hashes only), then writes `.ngodingpakeai/pending.json`: the list of new/changed files that need summaries (already curated — lockfiles/fixtures/barrels are excluded, so no wasted effort).
+4. **Write the summaries.** Read each file in `pending.json` and produce `.ngodingpakeai/summaries.json` (format below). Only files in the pending list — unchanged files keep their existing summaries.
+5. `npx ngodingpakeai sync` — validates and uploads summaries only. It FAILS with a list if any pending file is missing a summary (fix and re-run; `--allow-missing` skips them only if the user says so). **This final summary pass CLOSES the cycle** — run it only when every task is done (see hard rule 6). The earlier `sync --plan` metadata pass never closes a cycle.
+6. `npx ngodingpakeai status` — confirm; then report to the user: files indexed/summarized, warnings, and the exact plan link printed by the CLI. Its canonical shape is `/workspace/<workspaceId>?plan=<planId>`. Do not guess either id.
 
-## Privacy modes
-- **Basic Sync (default):** uploads the file tree, metadata, framework detection,
-  routes, and AI summaries — **not your raw source code**.
-- **Full Code Context (opt-in):** additionally uploads safe code snippets for more
-  precise answers. The CLI asks for confirmation. Enable it ONLY if the user agrees.
+## summaries.json format
+A FLAT JSON object keyed by file path — no wrapper, no `version`, no `files` array:
+```json
+{
+  "src/server/services/plan.service.ts": {
+    "summary": "Service layer untuk plan/PRD: CRUD, chat persistence, kompaksi riwayat.",
+    "sections": [
+      { "symbol": "planService.createPlan", "startLine": 1, "endLine": 120,
+        "summary": "Membuat plan baru dari jawaban onboarding; alokasi slug unik." }
+    ]
+  }
+}
+```
+Field names are exact: `summary`, `sections[]`, and inside a section `symbol` (NOT `symbolName`), `startLine`, `endLine`, `summary`. `sections` is optional.
+
+Rules for good summaries:
+- **Bahasa Indonesia**, 1–3 kalimat per summary. Sebut nama simbol, route, dan tabel yang relevan — itu yang membuat pencarian akurat.
+- Every summary (file-level AND section-level) must be **10–2000 characters**; the CLI rejects anything outside that before uploading.
+- Jelaskan peran file dalam app/package-nya serta interface yang dibentuk (route, API, event, export, worker) bila ada. Ringkasan ini menjadi bukti untuk dokumen kanonis, bukan dokumentasi per-folder.
+- `sections`: bagi file per fungsi/kelompok logis dengan rentang baris nyata. File kecil boleh tanpa `sections` sama sekali.
+- Do NOT put file hashes anywhere. The CLI computes them itself while scanning — they appear in neither `pending.json` nor `summaries.json`. If you edit a file after summarizing it, just run `sync --plan` again.
+- **NEVER paste code, credentials, connection strings, or API keys into a summary.** Describe behavior, don't quote source.
+
+`pending.json` (written by `sync --plan`) is `{ repo, generatedForCommit, files: [{ path, reason, language, size }] }` — `reason` is `new` | `changed` | `needs_summary`. Summarize exactly the paths it lists.
 
 ## Hard rules — do not violate
-1. Use the CLI for everything. Do not manually read or upload files. Do not call the API directly.
-2. Never upload secrets, `.env*` files, private keys, `node_modules`, build outputs (`dist`, `.next`, `build`, `out`), database dumps, or logs.
-3. Respect `.gitignore` and `.ngodingpakeaiignore`. If the CLI blocks a file, do not bypass it.
-4. If the CLI reports a potential secret, **STOP and ask the user** before continuing.
-5. Do not read or print the contents of `.env` files.
-6. Always report the final workspace URL and sync summary.
+1. Use the CLI for everything. Do not upload files yourself or call the HTTP API directly.
+2. Raw source code must never leave the machine — the CLI only uploads metadata + your summaries, and the server rejects/strips anything else.
+3. Never put secrets in summaries. Never read or print `.env*` files.
+4. Respect `.gitignore` and `.ngodingpakeaiignore`. If the CLI blocks a file, do not bypass it.
+5. Always report the sync summary and https://www.ngodingpakeai.com/workspace/356a5545-9579-4daf-a6b3-26b4def81586. Only pass on links the CLI actually printed — never assemble one from an id yourself.
+6. **For active implementation plans, run the final `sync` ONLY when every task is done — never mid-cycle.** The final summaries pass closes the cycle, rebuilds the wiki, and records a wiki version. `sync --plan` is metadata discovery only and is safe. A prepared reverse baseline plan has no tasks, so its first summary sync is the entry point.
+7. **Workspace targeting is fixed.** Use the exact Workspace ID embedded above and the repo's `.ngodingpakeai/config.json`. Never infer a workspace from a plan, account default, URL, or another agent session. If the server reports a workspace conflict or the target looks wrong, STOP and ask the user; never retry with another workspace ID.
 
 ## Command reference
 | Command | Purpose |
@@ -45,8 +123,10 @@ repository with NgodingPakeAI, follow this skill.
 | `npx ngodingpakeai doctor` | Verify environment, token, and connectivity. |
 | `npx ngodingpakeai connect --workspace <id> --token <ngpk_…>` | Link the repo to a workspace. |
 | `npx ngodingpakeai status` | Show connection + last sync state. |
-| `npx ngodingpakeai index` | Build the local safe index (no upload). |
-| `npx ngodingpakeai sync` | Upload the safe context to the workspace. |
+| `npx ngodingpakeai sync --plan` | Upload metadata + write `pending.json` (files needing summaries). |
+| `npx ngodingpakeai sync` | Validate + upload `summaries.json`. Fails if pending summaries are missing. |
+| `npx ngodingpakeai sync --if-changed` | Skip instantly when HEAD commit is already synced (cheap for loops/CI). |
+| `npx ngodingpakeai index` | Local scan preview only (no upload). |
 | `npx ngodingpakeai plan get <planId>` | Print a plan's PRD (project context) before working its tasks. |
 | `npx ngodingpakeai task next --plan <planId>` | Serve the SINGLE next task to work (full prompt inline), page-ordered & frontend-first. The main loop; `--json` to script. |
 | `npx ngodingpakeai task list` | List the current SLICE — one phase × one layer (frontend-first) when scoped to a plan; `--json` to script. |
@@ -62,9 +142,10 @@ repository with NgodingPakeAI, follow this skill.
 > task's UUID. Both resolve to the same task — prefer the readable path.
 
 ## What the workspace can do after sync
-- Codebase overview: framework, file tree, routes, key modules, last sync + warnings.
-- Better, context-aware prompts for you (relevant files, patterns, conventions).
-- Feature → file mapping (which files a change likely touches).
+- **A plan built from the code** (first sync of an empty workspace): PRD + fitur + sub-fitur describing what already exists, so the user can plan the NEXT change against it instead of starting from a blank page.
+- **Codebase chat**: the user asks questions about their codebase in the web app; answers cite `path:line` from your summaries.
+- **Canonical docs**: one repository overview, one overview per meaningful app/package, plus one interface/user-flow document for each app when applicable. They are rebuilt from summaries, with source paths + commit stored as metadata.
+- Semantic + symbol search over the whole index; feature → file mapping.
 - "Continue project" guidance based on what's already implemented.
 
 ## Working on tasks (assigned via a `<task>` block)

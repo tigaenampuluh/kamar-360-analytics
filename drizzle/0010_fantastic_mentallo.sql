@@ -1,0 +1,1 @@
+CREATE INDEX "idx_engagement_contents_profile_type_published" ON "engagement_contents" USING btree ("profile_url","content_type","published_at");

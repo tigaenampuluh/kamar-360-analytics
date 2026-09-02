@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "360 - Center of Research — Project Workspace",
-  description: "Workspace terpusat untuk melacak, menjadwalkan, dan mengarsipkan project riset.",
-  applicationName: "360 - Center of Research",
+  title: "PulseCheck — Engagement Rate Checker",
+  description: "Analisis engagement rate Instagram, TikTok, dan YouTube dalam satu dashboard.",
+  applicationName: "PulseCheck",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "360 Research",
+    title: "PulseCheck",
     statusBarStyle: "black-translucent",
   },
 };

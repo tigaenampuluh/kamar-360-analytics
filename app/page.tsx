@@ -56,6 +56,7 @@ import packageInfo from "@/package.json";
 import { AnnouncementBanner } from "@/components/announcement-banner";
 import { AnnouncementManager } from "@/components/announcement-manager";
 import { ProjectVersionHistory } from "@/components/project-version-history";
+import EngagementDashboard from "@/components/engagement-dashboard";
 
 type View = "dashboard" | "tracker" | "calendar" | "library" | "activity" | "admin" | "profile";
 type Status = "On Going" | "Delay" | "Pending" | "Revisi" | "Done";
@@ -2309,7 +2310,7 @@ function AuthScreen({ onEnterDemo, demoEnabled }: { onEnterDemo: () => void; dem
   );
 }
 
-export default function Home() {
+function LegacyHome() {
   const { data: session, isPending } = authClient.useSession();
   const [demoMode, setDemoMode] = useState(false);
   const [demoReady, setDemoReady] = useState(false);
@@ -2434,4 +2435,8 @@ export default function Home() {
       </div>
     </div>
   );
+}
+
+export default function Home() {
+  return <EngagementDashboard />;
 }
