@@ -7,9 +7,9 @@ const expected = {
   appId: "360-center-of-research",
   appName: "360 - Center of Research",
   service: "ruang-riset-api",
-  productionHost: "ruang-riset.vercel.app",
-  repositoryOwner: "gideonlybrium07",
-  repositorySlug: "ruang-riset",
+  productionHost: "kamar-360-analytics.vercel.app",
+  repositoryOwner: "tigaenampuluh",
+  repositorySlug: "kamar-360-analytics",
 };
 
 const failures = [];
