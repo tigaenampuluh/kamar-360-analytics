@@ -1,10 +1,12 @@
 {
   "name": "ruang-riset",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "guard:deployment": "node scripts/deployment-guard.mjs",
+    "build": "npm run guard:deployment && next build",
+    "verify:production": "node scripts/verify-production.mjs",
     "start": "next start",
     "lint": "next lint",
     "db:generate": "drizzle-kit generate",

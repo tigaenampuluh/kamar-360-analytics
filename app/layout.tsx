@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
+import { APP_DESCRIPTION, APP_NAME, APP_SHORT_NAME } from "@/lib/app-identity";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PulseCheck — Engagement Rate Checker",
-  description: "Analisis engagement rate Instagram, TikTok, dan YouTube dalam satu dashboard.",
-  applicationName: "PulseCheck",
+  title: `${APP_NAME} — Project Workspace`,
+  description: APP_DESCRIPTION,
+  applicationName: APP_NAME,
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "PulseCheck",
+    title: APP_SHORT_NAME,
     statusBarStyle: "black-translucent",
   },
 };

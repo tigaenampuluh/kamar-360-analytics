@@ -1,10 +1,11 @@
 import type { MetadataRoute } from "next";
+import { APP_DESCRIPTION, APP_NAME, APP_SHORT_NAME } from "@/lib/app-identity";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "360 - Center of Research",
-    short_name: "360 Research",
-    description: "Workspace terpusat untuk project dan kolaborasi riset.",
+    name: APP_NAME,
+    short_name: APP_SHORT_NAME,
+    description: APP_DESCRIPTION,
     start_url: "/",
     display: "standalone",
     background_color: "#f5f3ed",

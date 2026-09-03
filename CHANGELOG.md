@@ -2,6 +2,16 @@
 
 All notable production changes to 360 - Center of Research are documented here.
 
+## [1.0.1] - 2026-09-03
+
+### Fixed
+- Restored the official 360 - Center of Research browser and PWA metadata.
+
+### Security
+- Added a build-time Deployment Guard that rejects an incorrect app identity, repository, or Vercel production target.
+- Added production identity headers, a richer health response, an independent CI build check, and a production smoke-check command.
+- Excluded temporary Vercel source copies and local environment files from version control and deployment uploads.
+
 ## [1.0.0] - 2026-08-30
 
 ### Released
@@ -106,6 +116,7 @@ First formally versioned production baseline.
 - Project data and dashboard counts now stay synchronized across the main workspace views.
 - Login sessions end when the browser closes or after 10 minutes without activity.
 
+[1.0.1]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v1.0.1
 [1.0.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v1.0.0
 [0.5.1]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.5.1
 [0.5.0]: https://github.com/gideonlybrium07/ruang-riset/releases/tag/v0.5.0
