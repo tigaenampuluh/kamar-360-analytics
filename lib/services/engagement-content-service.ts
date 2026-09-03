@@ -12,6 +12,8 @@ export type EngagementContent = {
   platform: EngagementPlatform;
   contentType: EngagementContentType;
   title: string;
+  caption: string | null;
+  thumbnailUrl: string | null;
   externalId: string;
   url: string;
   publishedAt: string;
@@ -72,6 +74,21 @@ function contentUrl(profile: EngagementProfile, externalId: string, contentType:
   return `https://www.youtube.com/watch?v=${externalId}`;
 }
 
+function mockThumbnail(type: EngagementContentType, index: number) {
+  const palette: Record<EngagementContentType, [string, string]> = {
+    reels: ["#d8c8ff", "#8e70d8"],
+    carousel: ["#c9eaff", "#65a8d8"],
+    photo: ["#ffe0cc", "#e99a6e"],
+    tiktok_video: ["#d9f5ee", "#4ea894"],
+    youtube_video: ["#dff4e8", "#72b88c"],
+    shorts: ["#fff0bf", "#e2b654"],
+  };
+  const [start, end] = palette[type];
+  const label = type.replace("_", " ").toUpperCase();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="${start}"/><stop offset="1" stop-color="${end}"/></linearGradient></defs><rect width="640" height="420" rx="28" fill="url(#g)"/><circle cx="520" cy="100" r="110" fill="rgba(255,255,255,.26)"/><circle cx="120" cy="360" r="150" fill="rgba(255,255,255,.2)"/><path d="M286 168a42 42 0 1 1 0 84l-52-42 52-42Z" fill="rgba(38,50,71,.62)"/><text x="32" y="368" fill="rgba(38,50,71,.62)" font-family="Arial,sans-serif" font-size="24" font-weight="700" letter-spacing="2">${label}</text><text x="568" y="368" text-anchor="end" fill="rgba(38,50,71,.5)" font-family="Arial,sans-serif" font-size="18">${String(index + 1).padStart(2, "0")}</text></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
 /**
  * Temporary mock adapter for the latest-content contract. The API connectors
  * can replace this implementation without changing the analysis endpoint.
@@ -95,6 +112,8 @@ export function getLatestContentBatch(profile: EngagementProfile, now = new Date
       platform: profile.platform,
       contentType,
       title: `${contentType.replace("_", " ")} ${String(index + 1).padStart(2, "0")}`,
+      caption: `Ide konten ${contentType.replace("_", " ")} untuk ${profile.username}. Data ini adalah preview sampai metadata publik tersedia.`,
+      thumbnailUrl: mockThumbnail(contentType, index),
       externalId,
       url: contentUrl(profile, externalId, contentType),
       publishedAt: new Date(now.getTime() - index * 86_400_000).toISOString(),

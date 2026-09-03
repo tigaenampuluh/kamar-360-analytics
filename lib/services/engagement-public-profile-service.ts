@@ -155,6 +155,24 @@ function extractTitle(html: string) {
   return title ? decodeHtml(title.replace(/<[^>]+>/g, "")).trim().slice(0, 160) : null;
 }
 
+function extractCaption(html: string) {
+  const description = readMetaValue(html, "og:description")
+    || readMetaValue(html, "twitter:description")
+    || readMetaValue(html, "description");
+  return description ? decodeHtml(description).replace(/\s+/g, " ").trim().slice(0, 280) : null;
+}
+
+function extractImageUrl(html: string, sourceUrl: string) {
+  const image = readMetaValue(html, "og:image") || readMetaValue(html, "twitter:image");
+  if (!image) return null;
+  try {
+    const resolved = new URL(decodeHtml(image).trim(), sourceUrl);
+    return resolved.protocol === "https:" ? resolved.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 function extractContentUrls(html: string, profile: EngagementProfile) {
   const source = decodeHtml(html).replaceAll("\\/", "/");
   const patterns: RegExp[] = profile.platform === "instagram"
@@ -229,8 +247,10 @@ async function inspectPublicContent(profile: EngagementProfile, url: string, ind
       platform: profile.platform,
       contentType,
       title: extractTitle(html) || contentType.replace("_", " ") + " " + String(index + 1).padStart(2, "0"),
+      caption: extractCaption(html),
       externalId,
       url,
+      thumbnailUrl: extractImageUrl(html, url),
       publishedAt: publishedAtFromHtml(html, new Date(now.getTime() - index * 86_400_000)),
       views: views || 0,
       likes,

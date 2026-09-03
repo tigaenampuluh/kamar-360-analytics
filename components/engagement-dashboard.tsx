@@ -70,6 +70,9 @@ type ContentType = "Reels" | "Carousel" | "Foto" | "Video" | "Shorts";
 type ContentRow = {
   key: string;
   title: string;
+  caption: string | null;
+  url: string | null;
+  thumbnailUrl: string | null;
   type: ContentType;
   date: string;
   views: number;
@@ -85,6 +88,9 @@ type ApiContent = {
   id: string;
   contentType: "photo" | "carousel" | "reels" | "tiktok_video" | "youtube_video" | "shorts";
   title: string;
+  caption?: string | null;
+  url?: string | null;
+  thumbnailUrl?: string | null;
   publishedAt: string;
   views: number;
   likes: number;
@@ -120,11 +126,11 @@ type AnalysisSnapshot = {
 };
 
 const contentRows: ContentRow[] = [
-  { key: "1", title: "3 cara membangun komunitas yang engaged", type: "Reels", date: "Hari ini, 09:12", views: 182400, likes: 12480, comments: 684, shares: 2140, engagement: 8.41, tone: "#e9ddff" },
-  { key: "2", title: "Behind the scene campaign musim ini", type: "Carousel", date: "2 hari lalu", views: 96700, likes: 6140, comments: 318, shares: 980, engagement: 7.68, tone: "#d8efff" },
-  { key: "3", title: "Meet the team: cerita di balik brand", type: "Foto", date: "4 hari lalu", views: 48300, likes: 2810, comments: 176, shares: null, engagement: 6.18, tone: "#ffe6d6" },
-  { key: "4", title: "Apa yang berubah di industri kreatif?", type: "Reels", date: "6 hari lalu", views: 134500, likes: 7620, comments: 420, shares: 1320, engagement: 6.96, tone: "#dff4e8" },
-  { key: "5", title: "Q&A: strategi konten untuk pemula", type: "Video", date: "8 hari lalu", views: 72100, likes: 3490, comments: 206, shares: 410, engagement: 5.69, tone: "#fff0bf" },
+  { key: "1", title: "3 cara membangun komunitas yang engaged", caption: "Tiga langkah praktis untuk membangun komunitas yang aktif dan merasa dilibatkan.", url: "https://instagram.com/akirastudio", thumbnailUrl: null, type: "Reels", date: "Hari ini, 09:12", views: 182400, likes: 12480, comments: 684, shares: 2140, engagement: 8.41, tone: "#e9ddff" },
+  { key: "2", title: "Behind the scene campaign musim ini", caption: "Cerita di balik proses produksi campaign dan momen yang jarang terlihat.", url: "https://instagram.com/akirastudio", thumbnailUrl: null, type: "Carousel", date: "2 hari lalu", views: 96700, likes: 6140, comments: 318, shares: 980, engagement: 7.68, tone: "#d8efff" },
+  { key: "3", title: "Meet the team: cerita di balik brand", caption: "Kenalan dengan orang-orang di balik ide, strategi, dan eksekusi brand.", url: "https://instagram.com/akirastudio", thumbnailUrl: null, type: "Foto", date: "4 hari lalu", views: 48300, likes: 2810, comments: 176, shares: null, engagement: 6.18, tone: "#ffe6d6" },
+  { key: "4", title: "Apa yang berubah di industri kreatif?", caption: "Rangkuman perubahan terbaru di industri kreatif dan dampaknya untuk creator.", url: "https://instagram.com/akirastudio", thumbnailUrl: null, type: "Reels", date: "6 hari lalu", views: 134500, likes: 7620, comments: 420, shares: 1320, engagement: 6.96, tone: "#dff4e8" },
+  { key: "5", title: "Q&A: strategi konten untuk pemula", caption: "Jawaban singkat untuk pertanyaan yang paling sering muncul dari creator pemula.", url: "https://instagram.com/akirastudio", thumbnailUrl: null, type: "Video", date: "8 hari lalu", views: 72100, likes: 3490, comments: 206, shares: 410, engagement: 5.69, tone: "#fff0bf" },
 ];
 
 const contentTypeStats = [
@@ -344,6 +350,9 @@ function rowsFromAnalysis(analysis: AnalysisSnapshot): ContentRow[] {
     return {
       key: content.id,
       title: content.title,
+      caption: content.caption ?? null,
+      url: content.url ?? analysis.account.profileUrl ?? null,
+      thumbnailUrl: content.thumbnailUrl ?? null,
       type,
       date: formatPublishedAt(content.publishedAt),
       views: content.views,
@@ -501,13 +510,27 @@ function HistoryTrendChart({ items }: { items: AnalysisHistoryItem[] }) {
   );
 }
 
-function ContentThumbnail({ tone, type }: Pick<ContentRow, "tone" | "type">) {
+function ContentThumbnail({ tone, type, thumbnailUrl }: Pick<ContentRow, "tone" | "type" | "thumbnailUrl">) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = Boolean(thumbnailUrl) && !imageFailed;
+
   return (
-    <div className="engagement-thumbnail" style={{ background: tone }} aria-hidden="true">
-      <span><PlayCircleOutlined /></span>
-      <small>{type}</small>
+    <div className="engagement-thumbnail" style={{ background: tone }} role="img" aria-label={`Thumbnail ${type}`}>
+      {showImage ? (
+        <img src={thumbnailUrl || undefined} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setImageFailed(true)} />
+      ) : (
+        <>
+          <span aria-hidden="true"><PlayCircleOutlined /></span>
+          <small aria-hidden="true">{type}</small>
+        </>
+      )}
     </div>
   );
+}
+
+function ContentPreviewLink({ url }: { url: string | null }) {
+  if (!url) return <Text type="secondary" className="engagement-content-preview-unavailable">Preview tidak tersedia</Text>;
+  return <a href={url} target="_blank" rel="noreferrer" className="engagement-content-preview-link" onClick={(event) => event.stopPropagation()}><LinkOutlined /> Lihat preview</a>;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -518,13 +541,15 @@ function ContentCard({ row }: { row: ContentRow }) {
   return (
     <Card variant="borderless" className="engagement-content-card">
       <div className="engagement-content-card-thumbnail">
-        <ContentThumbnail tone={row.tone} type={row.type} />
+        <ContentThumbnail tone={row.tone} type={row.type} thumbnailUrl={row.thumbnailUrl} />
         <Tag variant="filled" color="blue">{row.type}</Tag>
         {row.isBest && <span className="engagement-content-card-best"><FireFilled /> ER tertinggi</span>}
       </div>
       <div className="engagement-content-card-copy">
         <Text strong className="engagement-content-card-title">{row.title}</Text>
         <Text type="secondary" className="engagement-content-card-date">{row.date}</Text>
+        <Text type="secondary" className="engagement-content-card-caption">{row.caption || "Caption belum tersedia dari sumber publik."}</Text>
+        <ContentPreviewLink url={row.url} />
       </div>
       <div className="engagement-content-card-metrics">
         <div><Text type="secondary">Views</Text><strong>{compactNumber(row.views)}</strong></div>
@@ -1303,10 +1328,11 @@ export default function EngagementDashboard() {
       key: "title",
       render: (title: string, row) => (
         <Space size={12}>
-          <ContentThumbnail tone={row.tone} type={row.type} />
+          <ContentThumbnail tone={row.tone} type={row.type} thumbnailUrl={row.thumbnailUrl} />
           <div className="engagement-content-title-wrap">
             <Text strong className="engagement-content-title">{title}</Text>
             <Text type="secondary" className="engagement-content-date">{row.date}</Text>
+            <Text type="secondary" className="engagement-content-caption">{row.caption || "Caption belum tersedia."}</Text>
           </div>
         </Space>
       ),
@@ -1326,6 +1352,13 @@ export default function EngagementDashboard() {
       key: "engagement",
       align: "right",
       render: (value: number, row) => <Text strong style={{ color: row.isBest ? "#635bff" : "#263247" }}>{formatEngagementRate(value)}</Text>,
+    },
+    {
+      title: "Preview",
+      key: "preview",
+      align: "right",
+      responsive: ["md"],
+      render: (_, row) => <ContentPreviewLink url={row.url} />,
     },
   ];
 
@@ -1596,7 +1629,7 @@ export default function EngagementDashboard() {
               </Card>
 
               <Row gutter={[20, 20]} className="engagement-bottom-grid">
-                <Col xs={24} lg={14}><Card variant="borderless" className="engagement-panel-card engagement-best-card"><div className="engagement-best-content"><div className="engagement-best-thumbnail"><ContentThumbnail tone={bestRow.tone} type={bestRow.type} /><span className="engagement-best-ribbon"><FireFilled /> Konten terbaik</span></div><div className="engagement-best-details"><SectionLabel>TOP PERFORMER · {bestRow.type.toUpperCase()}</SectionLabel><Title level={3}>{bestRow.title}</Title><Text type="secondary">Konten ini mendapatkan engagement tertinggi dari {displayedRows.length} konten yang dianalisis.</Text><div className="engagement-best-metrics"><div><Text type="secondary">Engagement rate</Text><strong>{formatEngagementRate(bestRow.engagement)}</strong></div><div><Text type="secondary">Total interaksi</Text><strong>{compactNumber(bestRow.likes + bestRow.comments + (bestRow.shares || 0))}</strong></div><div><Text type="secondary">Views</Text><strong>{compactNumber(bestRow.views)}</strong></div></div><Button type="link" onClick={() => messageApi.info("Detail konten akan tersedia pada rincian konten.")}>Buka detail <ArrowUpOutlined /></Button></div></div></Card></Col>
+                <Col xs={24} lg={14}><Card variant="borderless" className="engagement-panel-card engagement-best-card"><div className="engagement-best-content"><div className="engagement-best-thumbnail"><ContentThumbnail tone={bestRow.tone} type={bestRow.type} thumbnailUrl={bestRow.thumbnailUrl} /><span className="engagement-best-ribbon"><FireFilled /> Konten terbaik</span></div><div className="engagement-best-details"><SectionLabel>TOP PERFORMER · {bestRow.type.toUpperCase()}</SectionLabel><Title level={3}>{bestRow.title}</Title><Text type="secondary">{bestRow.caption || "Caption belum tersedia dari sumber publik."}</Text><div className="engagement-best-metrics"><div><Text type="secondary">Engagement rate</Text><strong>{formatEngagementRate(bestRow.engagement)}</strong></div><div><Text type="secondary">Total interaksi</Text><strong>{compactNumber(bestRow.likes + bestRow.comments + (bestRow.shares || 0))}</strong></div><div><Text type="secondary">Views</Text><strong>{compactNumber(bestRow.views)}</strong></div></div><ContentPreviewLink url={bestRow.url} /></div></div></Card></Col>
                 <Col xs={24} lg={10}><Card variant="borderless" className="engagement-panel-card engagement-data-note-card" title={<div><Title level={4}>Catatan data</Title><Text type="secondary">Informasi tentang ketersediaan metrik</Text></div>}><Space orientation="vertical" size={14} className="engagement-data-notes"><div><Badge status="success" /><span>Views, likes, dan comments tersedia</span></div><div><Badge status="success" /><span>{currentPlatform === "YouTube" ? "Subscribers" : "Followers"} terakhir diperbarui hari ini</span></div><div><Badge status={sharesArePartial ? "warning" : "success"} /><span>{sharesArePartial ? "Shares tidak tersedia di sebagian konten" : "Shares tersedia untuk seluruh konten"}</span></div></Space><Alert type={sharesArePartial ? "warning" : "success"} showIcon title={dataAvailabilityMessage} /></Card></Col>
               </Row>
                 </>

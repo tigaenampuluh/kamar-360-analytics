@@ -199,9 +199,13 @@ button { cursor: pointer; }
 .engagement-table-card .ant-table-tbody > tr > td { padding: 11px 12px; border-bottom-color: #f0f1f5; }
 .engagement-table-card .ant-tag { margin: 0; font-size: 10px; }
 .engagement-table-card .ant-space { justify-content: flex-end; }
-.engagement-content-title-wrap { display: flex; width: 230px; flex-direction: column; gap: 4px; }
+.engagement-content-title-wrap { display: flex; width: 290px; flex-direction: column; gap: 3px; }
 .engagement-content-title { overflow: hidden; color: #263247 !important; font-size: 11px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .engagement-content-date { font-size: 10px; }
+.engagement-content-caption { display: -webkit-box; overflow: hidden; color: #7e879b !important; font-size: 10px; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.engagement-content-preview-link { display: inline-flex; align-items: center; gap: 4px; width: fit-content; color: #635bff; font-size: 10px; font-weight: 600; text-decoration: none; }
+.engagement-content-preview-link:hover { color: #4d46d7; text-decoration: underline; }
+.engagement-content-preview-unavailable { font-size: 10px; }
 .engagement-content-list-card .ant-card-body { padding-top: 0; }
 .engagement-content-list-meta { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid #f0f1f5; font-size: 10px; }
 .engagement-content-list-meta .anticon { margin-right: 5px; color: #10a36d; }
@@ -216,6 +220,7 @@ button { cursor: pointer; }
 .engagement-content-card-copy { display: flex; min-height: 62px; flex-direction: column; gap: 5px; padding: 12px 14px 14px; }
 .engagement-content-card-title { overflow: hidden; color: #263247 !important; font-size: 12px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .engagement-content-card-date { font-size: 10px; }
+.engagement-content-card-caption { display: -webkit-box; overflow: hidden; color: #7e879b !important; font-size: 10px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .engagement-content-card-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; padding: 10px 14px 14px; border-top: 1px solid #f0f1f5; }
 .engagement-content-card-metrics > div { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .engagement-content-card-metrics .ant-typography-secondary { color: #9aa2b2; font-size: 9px; }
@@ -223,6 +228,7 @@ button { cursor: pointer; }
 .engagement-content-card-er strong { color: #635bff; }
 .engagement-content-metric-unavailable strong { color: #c58b2b; }
 .engagement-thumbnail { position: relative; display: flex; width: 45px; height: 45px; flex: 0 0 auto; align-items: center; justify-content: center; overflow: hidden; border-radius: 7px; color: rgba(38, 50, 71, .6); }
+.engagement-thumbnail img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .engagement-thumbnail span { font-size: 17px; }
 .engagement-thumbnail small { position: absolute; right: 4px; bottom: 3px; max-width: 36px; overflow: hidden; color: rgba(38, 50, 71, .62); font-size: 7px; font-weight: 700; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .engagement-table-footer { display: flex; gap: 18px; padding-top: 14px; font-size: 10px; }
