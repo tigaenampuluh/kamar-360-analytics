@@ -1,10 +1,12 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { engagementContents } from "@/db/schema";
-import { getLatestContentBatch, LATEST_CONTENT_LIMIT } from "@/lib/services/engagement-content-service";
+import { LATEST_CONTENT_LIMIT } from "@/lib/services/engagement-content-service";
+import { getLatestPlatformContent } from "@/lib/services/engagement-platform-content-service";
 import { normalizeEngagementProfileUrl } from "@/lib/services/engagement-profile-service";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 function invalidProfileResponse() {
   return Response.json({ error: "Gunakan parameter profileUrl berupa tautan profil publik Instagram, TikTok, atau YouTube." }, { status: 400 });
@@ -60,14 +62,14 @@ export async function GET(request: Request) {
     // The preview adapter below keeps the endpoint usable before migration/data sync.
   }
 
-  const mock = getLatestContentBatch(profile);
+  const live = await getLatestPlatformContent(profile);
   return Response.json({
     data: {
       profile,
-      count: mock.contents.length,
+      count: live.contents.length,
       limit: LATEST_CONTENT_LIMIT,
-      contents: mock.contents,
-      source: { mode: "mock", status: "preview", message: "Belum ada konten tersimpan; response memakai data tiruan." },
+      contents: live.contents,
+      source: live.source,
     },
   });
 }

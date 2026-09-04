@@ -119,7 +119,7 @@ type AnalysisSnapshot = {
     message: string | null;
   };
   source?: {
-    mode: "official" | "public" | "partial" | "mock";
+    mode: "official" | "apify" | "public" | "partial" | "mock";
     status: "ready" | "partial" | "preview";
     message: string | null;
   };
@@ -652,7 +652,7 @@ type ComparisonPrimaryAccount = {
   erAverage: number;
   erWeighted: number;
   totalInteractions: number;
-  sourceMode?: "public" | "partial" | "mock";
+  sourceMode?: "apify" | "public" | "partial" | "mock";
   sourceLabel?: string;
   sourceMessage?: string;
 };
@@ -711,7 +711,7 @@ function parseComparisonAccounts(payload: unknown): CompetitorAccount[] | null {
     const platform = platformFromApi(value.platform);
     const profileUrl = typeof value.profileUrl === "string" ? value.profileUrl : null;
     const username = typeof value.username === "string" ? value.username : null;
-    const sourceMode = value.source === "public" || value.source === "partial" || value.source === "mock" ? value.source as "public" | "partial" | "mock" : null;
+    const sourceMode = value.source === "apify" || value.source === "public" || value.source === "partial" || value.source === "mock" ? value.source as "apify" | "public" | "partial" | "mock" : null;
     const sourceLabel = typeof value.sourceLabel === "string" ? value.sourceLabel : null;
     const sourceMessage = typeof value.sourceMessage === "string" ? value.sourceMessage : null;
     const followersCount = typeof value.followersCount === "number" ? value.followersCount : null;
@@ -1393,7 +1393,7 @@ export default function EngagementDashboard() {
       if (payload.data.dataAvailability.shares === "partial") {
         messageApi.warning("Analisis selesai dengan data parsial: shares tidak tersedia untuk sebagian konten.");
       } else {
-        messageApi.success("Analisis mock berhasil diperbarui.");
+        messageApi.success(payload.data.source?.mode === "apify" ? "Analisis data publik berhasil diperbarui." : "Analisis preview berhasil diperbarui.");
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Analisis belum dapat diproses.";

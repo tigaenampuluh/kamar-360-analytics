@@ -5,6 +5,7 @@ import { normalizeEngagementProfileUrl } from "@/lib/services/engagement-profile
 import { isEngagementInsightsEnabled } from "@/lib/feature-flags";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const requestSchema = z.object({
   profileUrl: z.string().trim().max(2_048),

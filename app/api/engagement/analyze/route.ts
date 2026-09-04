@@ -5,6 +5,7 @@ import { getLatestPlatformContent } from "@/lib/services/engagement-platform-con
 import { normalizeEngagementProfileUrl } from "@/lib/services/engagement-profile-service";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 type Platform = EngagementPlatform;
 type Profile = EngagementProfile;

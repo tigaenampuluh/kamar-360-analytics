@@ -4,6 +4,7 @@ import {
   type EngagementPlatform,
   type EngagementProfile,
 } from "@/lib/services/engagement-content-service";
+import { getLatestApifyContent, isApifyConfigured } from "@/lib/services/engagement-apify-service";
 import { getLatestPublicContent } from "@/lib/services/engagement-public-profile-service";
 
 export type PlatformContentConnection = {
@@ -13,9 +14,10 @@ export type PlatformContentConnection = {
 };
 
 export type PlatformContentSource = {
-  mode: "official" | "public" | "partial" | "mock";
+  mode: "official" | "apify" | "public" | "partial" | "mock";
   status: "ready" | "partial" | "preview";
   message: string | null;
+  provider?: "official" | "apify" | "public" | "mock";
 };
 
 export type PlatformContentBatch = {
@@ -41,6 +43,28 @@ async function publicBatch(profile: EngagementProfile, now?: Date): Promise<Plat
   return { profile, ...(await getLatestPublicContent(profile, now)) };
 }
 
+async function configuredPublicBatch(profile: EngagementProfile, now?: Date): Promise<PlatformContentBatch> {
+  if (isApifyConfigured()) {
+    try {
+      const apifyBatch = await getLatestApifyContent(profile, now);
+      if (apifyBatch) return { profile, ...apifyBatch };
+    } catch {
+      // Keep the link-only flow usable when an Actor is unavailable or times out.
+    }
+  }
+
+  const fallback = await publicBatch(profile, now);
+  return {
+    ...fallback,
+    source: {
+      ...fallback.source,
+      message: isApifyConfigured()
+        ? `Apify belum mengembalikan data; ${fallback.source.message || "crawl publik dipakai sebagai fallback."}`
+        : fallback.source.message,
+    },
+  };
+}
+
 function normalizeOfficialContents(profile: EngagementProfile, contents: readonly EngagementContent[]) {
   return contents
     .filter((content) => content.platform === profile.platform)
@@ -56,7 +80,8 @@ function normalizeOfficialContents(profile: EngagementProfile, contents: readonl
  * Mengambil paling banyak 20 konten terbaru melalui adapter API resmi platform.
  * Adapter menerima token yang sudah disimpan server dan wajib mengembalikan
  * data dalam kontrak EngagementContent. Tanpa koneksi, layanan mencoba crawl
- * halaman publik lebih dulu dan memakai data preview jika metriknya tertutup.
+ * Apify dipakai untuk link-only jika token server tersedia. Tanpa token,
+ * layanan mencoba crawl halaman publik dan memakai data preview jika metriknya tertutup.
  */
 export async function getLatestPlatformContent(
   profile: EngagementProfile,
@@ -64,11 +89,11 @@ export async function getLatestPlatformContent(
 ): Promise<PlatformContentBatch> {
   const connection = options.connection;
   if (!connection || connection.status !== "connected" || !connection.accessToken) {
-    return publicBatch(profile, options.now);
+    return configuredPublicBatch(profile, options.now);
   }
 
   if (!options.fetchOfficial) {
-    return publicBatch(profile, options.now);
+    return configuredPublicBatch(profile, options.now);
   }
 
   try {
@@ -81,6 +106,6 @@ export async function getLatestPlatformContent(
       source: { mode: "official", status: "ready", message: null },
     };
   } catch {
-    return publicBatch(profile, options.now);
+    return configuredPublicBatch(profile, options.now);
   }
 }
