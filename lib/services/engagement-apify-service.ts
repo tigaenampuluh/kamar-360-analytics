@@ -29,7 +29,7 @@ const apifyCache = new Map<string, { expiresAt: number; batch: ApifyContentBatch
 const apifyInFlight = new Map<string, Promise<ApifyContentBatch>>();
 
 const defaultActorIds: Record<EngagementPlatform, string> = {
-  instagram: "apify/instagram-scraper",
+  instagram: "apify/instagram-profile-scraper",
   tiktok: "clockworks/tiktok-scraper",
   youtube: "scraper-engine/youtube-scraper",
 };
@@ -161,7 +161,7 @@ function contentTypeFor(profile: EngagementProfile, item: JsonRecord, url: strin
   const productType = (asString(item.productType) || "").toLowerCase();
   const section = (asString(item.section) || "").toLowerCase();
   if (type === "sidecar" || productType.includes("carousel")) return "carousel";
-  if (section === "reels" || productType === "clips" || productType.includes("reel")) return "reels";
+  if (section === "reels" || productType === "clips" || productType.includes("reel") || type === "video") return "reels";
   return "photo";
 }
 
@@ -219,7 +219,7 @@ function normalizeItem(profile: EngagementProfile, item: JsonRecord, index: numb
       || item.createTime,
     new Date(now.getTime() - index * 86_400_000),
   );
-  const thumbnailUrl = safeHttpsUrl(firstString([item], ["displayUrl", "thumbnailUrl", "thumbnail", "coverUrl", "cover", "originCoverUrl"]));
+  const thumbnailUrl = safeHttpsUrl(firstString([item], ["displayUrl", "thumbnailUrl", "thumbnail", "imageUrl", "coverUrl", "cover", "originCoverUrl"]));
   const title = firstString([item], ["title", "videoTitle", "name"]) || shortTitle(caption) || platformTitle(profile, contentType, index);
 
   return {
@@ -253,12 +253,7 @@ function actorPath(actorId: string) {
 
 function actorInput(profile: EngagementProfile): JsonRecord {
   if (profile.platform === "instagram") {
-    return {
-      directUrls: [profile.profileUrl],
-      resultsType: "posts",
-      resultsLimit: LATEST_CONTENT_LIMIT,
-      addParentData: true,
-    };
+    return { usernames: [profile.username] };
   }
   if (profile.platform === "tiktok") {
     return {
@@ -277,14 +272,6 @@ function actorInput(profile: EngagementProfile): JsonRecord {
     maxStreams: 0,
     downloadSubtitles: false,
     sortBy: "date",
-  };
-}
-
-function instagramDetailsInput(profile: EngagementProfile): JsonRecord {
-  return {
-    directUrls: [profile.profileUrl],
-    resultsType: "details",
-    resultsLimit: 1,
   };
 }
 
@@ -316,8 +303,16 @@ async function runActor(profile: EngagementProfile, token: string, input: JsonRe
 
 function normalizeBatch(profile: EngagementProfile, items: readonly unknown[], now: Date): ApifyContentBatch {
   const records = items.map(asRecord).filter((value): value is JsonRecord => value !== null);
-  const followersCount = followersFromItems(records);
-  const contents = records
+  const nestedContents = records.flatMap((record) => {
+    if (profile.platform !== "instagram") return [];
+    const values = [record.latestPosts, record.latest_posts, record.posts].filter(Array.isArray);
+    return values.flatMap((value) => value as unknown[]);
+  });
+  const contentRecords = (nestedContents.length > 0 ? nestedContents : records)
+    .map(asRecord)
+    .filter((value): value is JsonRecord => value !== null);
+  const followersCount = Math.max(followersFromItems(records), followersFromItems(contentRecords));
+  const contents = contentRecords
     .map((item, index) => normalizeItem(profile, item, index, followersCount, now))
     .filter((content): content is EngagementContent => content !== null)
     .sort((left, right) => new Date(right.publishedAt).getTime() - new Date(left.publishedAt).getTime())
@@ -343,33 +338,6 @@ function normalizeBatch(profile: EngagementProfile, items: readonly unknown[], n
   };
 }
 
-function applyFollowerCount(batch: ApifyContentBatch, followersCount: number): ApifyContentBatch {
-  const contents = batch.contents.map((content) => ({
-    ...content,
-    engagementRate: calculateContentEngagementRate({
-      likes: content.likes,
-      comments: content.comments,
-      shares: content.shares,
-      followersCount,
-    }),
-    isBest: false,
-  }));
-  const bestIndex = contents.reduce((best, content, index) => content.engagementRate > contents[best].engagementRate ? index : best, 0);
-  if (contents[bestIndex]) contents[bestIndex].isBest = true;
-  return {
-    ...batch,
-    followersCount,
-    contents,
-    source: {
-      ...batch.source,
-      status: contents.some((content) => content.unavailableFields.length > 0) ? "partial" : "ready",
-      message: contents.some((content) => content.unavailableFields.length > 0)
-        ? "Data publik berhasil diambil Apify, tetapi sebagian metrik tidak tersedia dari platform."
-        : "Data konten publik berhasil diambil Apify.",
-    },
-  };
-}
-
 export function isApifyConfigured() {
   return Boolean(process.env.APIFY_API_TOKEN?.trim());
 }
@@ -391,18 +359,7 @@ export async function getLatestApifyContent(profile: EngagementProfile, now = ne
   if (activeRequest) return activeRequest;
 
   const request = runActor(profile, token)
-    .then(async (items) => {
-      const batch = normalizeBatch(profile, items, now);
-      if (profile.platform !== "instagram" || batch.followersCount > 0) return batch;
-
-      try {
-        const detailItems = await runActor(profile, token, instagramDetailsInput(profile));
-        const followersCount = followersFromItems(detailItems);
-        return followersCount > 0 ? applyFollowerCount(batch, followersCount) : batch;
-      } catch {
-        return batch;
-      }
-    })
+    .then((items) => normalizeBatch(profile, items, now))
     .then((batch) => {
       apifyCache.set(cacheKey, { expiresAt: Date.now() + apifyCacheTtlMs, batch });
       return batch;
