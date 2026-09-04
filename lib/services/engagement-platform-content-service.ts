@@ -48,8 +48,19 @@ async function configuredPublicBatch(profile: EngagementProfile, now?: Date): Pr
     try {
       const apifyBatch = await getLatestApifyContent(profile, now);
       if (apifyBatch) return { profile, ...apifyBatch };
-    } catch {
+    } catch (error) {
       // Keep the link-only flow usable when an Actor is unavailable or times out.
+      const reason = error instanceof Error && /^(apify-(http-\d{3}|timeout|network|empty))$/.test(error.message)
+        ? error.message
+        : "apify-unavailable";
+      const fallback = await publicBatch(profile, now);
+      return {
+        ...fallback,
+        source: {
+          ...fallback.source,
+          message: `Apify gagal (${reason}); ${fallback.source.message || "crawl publik dipakai sebagai fallback."}`,
+        },
+      };
     }
   }
 

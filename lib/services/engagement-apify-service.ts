@@ -274,18 +274,23 @@ function actorInput(profile: EngagementProfile) {
 
 async function runActor(profile: EngagementProfile, token: string) {
   const endpoint = `${apifyApiBaseUrl}/acts/${actorPath(actorIdFor(profile.platform))}/run-sync-get-dataset-items`;
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(actorInput(profile)),
-    signal: AbortSignal.timeout(apifyRequestTimeoutMs),
-    cache: "no-store",
-  });
-  if (!response.ok) throw new Error("apify-request-failed");
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(actorInput(profile)),
+      signal: AbortSignal.timeout(apifyRequestTimeoutMs),
+      cache: "no-store",
+    });
+  } catch (error) {
+    throw new Error(error instanceof DOMException && error.name === "TimeoutError" ? "apify-timeout" : "apify-network");
+  }
+  if (!response.ok) throw new Error(`apify-http-${response.status}`);
   const payload: unknown = await response.json().catch(() => null);
   if (Array.isArray(payload)) return payload;
   const record = asRecord(payload);
