@@ -86,6 +86,7 @@ function nestedRecords(item: JsonRecord) {
     asRecord(item.authorMeta),
     asRecord(item.authorStats),
     asRecord(item.channel),
+    asRecord(item.stats),
     asRecord(item.parentData),
     asRecord(asRecord(item.parentData)?.profile),
   ].filter((value): value is JsonRecord => value !== null);
@@ -102,6 +103,13 @@ function followersFromItem(item: JsonRecord) {
     "subscribers",
     "authorFollowers",
   ]);
+}
+
+function followersFromItems(items: readonly unknown[]) {
+  return items
+    .map(asRecord)
+    .filter((value): value is JsonRecord => value !== null)
+    .reduce<number>((current, item) => Math.max(current, followersFromItem(item) || 0), 0);
 }
 
 function metricFromItem(item: JsonRecord, keys: readonly string[]) {
@@ -243,7 +251,7 @@ function actorPath(actorId: string) {
   return encodeURIComponent(actorId.replaceAll("/", "~"));
 }
 
-function actorInput(profile: EngagementProfile) {
+function actorInput(profile: EngagementProfile): JsonRecord {
   if (profile.platform === "instagram") {
     return {
       directUrls: [profile.profileUrl],
@@ -272,7 +280,15 @@ function actorInput(profile: EngagementProfile) {
   };
 }
 
-async function runActor(profile: EngagementProfile, token: string) {
+function instagramDetailsInput(profile: EngagementProfile): JsonRecord {
+  return {
+    directUrls: [profile.profileUrl],
+    resultsType: "details",
+    resultsLimit: 1,
+  };
+}
+
+async function runActor(profile: EngagementProfile, token: string, input: JsonRecord = actorInput(profile)) {
   const endpoint = `${apifyApiBaseUrl}/acts/${actorPath(actorIdFor(profile.platform))}/run-sync-get-dataset-items`;
   let response: Response;
   try {
@@ -283,7 +299,7 @@ async function runActor(profile: EngagementProfile, token: string) {
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify(actorInput(profile)),
+    body: JSON.stringify(input),
       signal: AbortSignal.timeout(apifyRequestTimeoutMs),
       cache: "no-store",
     });
@@ -300,7 +316,7 @@ async function runActor(profile: EngagementProfile, token: string) {
 
 function normalizeBatch(profile: EngagementProfile, items: readonly unknown[], now: Date): ApifyContentBatch {
   const records = items.map(asRecord).filter((value): value is JsonRecord => value !== null);
-  const followersCount = records.reduce<number>((current, item) => Math.max(current, followersFromItem(item) || 0), 0);
+  const followersCount = followersFromItems(records);
   const contents = records
     .map((item, index) => normalizeItem(profile, item, index, followersCount, now))
     .filter((content): content is EngagementContent => content !== null)
@@ -327,6 +343,33 @@ function normalizeBatch(profile: EngagementProfile, items: readonly unknown[], n
   };
 }
 
+function applyFollowerCount(batch: ApifyContentBatch, followersCount: number): ApifyContentBatch {
+  const contents = batch.contents.map((content) => ({
+    ...content,
+    engagementRate: calculateContentEngagementRate({
+      likes: content.likes,
+      comments: content.comments,
+      shares: content.shares,
+      followersCount,
+    }),
+    isBest: false,
+  }));
+  const bestIndex = contents.reduce((best, content, index) => content.engagementRate > contents[best].engagementRate ? index : best, 0);
+  if (contents[bestIndex]) contents[bestIndex].isBest = true;
+  return {
+    ...batch,
+    followersCount,
+    contents,
+    source: {
+      ...batch.source,
+      status: contents.some((content) => content.unavailableFields.length > 0) ? "partial" : "ready",
+      message: contents.some((content) => content.unavailableFields.length > 0)
+        ? "Data publik berhasil diambil Apify, tetapi sebagian metrik tidak tersedia dari platform."
+        : "Data konten publik berhasil diambil Apify.",
+    },
+  };
+}
+
 export function isApifyConfigured() {
   return Boolean(process.env.APIFY_API_TOKEN?.trim());
 }
@@ -348,7 +391,18 @@ export async function getLatestApifyContent(profile: EngagementProfile, now = ne
   if (activeRequest) return activeRequest;
 
   const request = runActor(profile, token)
-    .then((items) => normalizeBatch(profile, items, now))
+    .then(async (items) => {
+      const batch = normalizeBatch(profile, items, now);
+      if (profile.platform !== "instagram" || batch.followersCount > 0) return batch;
+
+      try {
+        const detailItems = await runActor(profile, token, instagramDetailsInput(profile));
+        const followersCount = followersFromItems(detailItems);
+        return followersCount > 0 ? applyFollowerCount(batch, followersCount) : batch;
+      } catch {
+        return batch;
+      }
+    })
     .then((batch) => {
       apifyCache.set(cacheKey, { expiresAt: Date.now() + apifyCacheTtlMs, batch });
       return batch;
